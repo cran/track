@@ -1,0 +1,62 @@
+                CHANGES in track version 1.0-0 (2010-11-07)
+ENHANCEMENTS
+    o   Changed package name from 'trackObjs' to 'track'
+    o   Many incremental improvments in efficiency, stability
+        and functionality (especially around auto-tracking).
+    o   Added functions track.copy() and track.move()
+    o   Added incremental history mechanism
+    o   Added plugin function feature for specifying which
+        objects should be cached.
+
+                CHANGES in trackObjs version 0.9-3 (2010-07-17)
+ENHANCEMENTS
+    o   Major improvement in user level functionality: added
+        ability to auto-track new and deleted variables using
+        task callbacks (on by default).  This means that all
+        the user has to do to track all created objects (and
+        keep up with deletions) is to issue the command
+        track.start() once to start tracking.
+    o   made 'rdatadir' the default directory for storing
+        R objects
+    o   added new function track.attach() to attach an existing
+        db of objects to the search path.  Has a readonly
+        mode that prevents changing any files on disk.
+    o   add four new option components:
+           - readonly: logical value indicating whether the
+               environment is readonly
+           - autoTrackExcludePattern: vector of regexps specifying
+               vars not to track automatically
+           - autoTrackExcludeClass: vector of class names for
+               which objects should not be tracked
+           - clobberVars: vector of variable names that can be
+               silently clobbered when attaching a tracking db.
+               The default is ".Random.seed", to avoid annoying
+               errors/messages about the variable .Random.seed
+               (which can be created by various functions).
+    o   change track(x <- value) so that if x already exists, or
+        is already tracked, x still gets the new value
+    o   renamed track.restart() to track.rescan()
+
+                CHANGES in trackObjs version 0.8-6 (2009-11-03)
+ENHANCEMENTS
+    o   Fix documentation links so that they pass the stricter
+        tests in R CMD check.
+
+                CHANGES in trackObjs version 0.8-3 (2009-02-20)
+BUG FIXES
+    o   Make each test use a unique tracking database so that
+        tests don't interfere with each other when run in parallel.
+
+                CHANGES in trackObjs version 0.8-0
+BUG FIXES
+    o   Fixed faulty detection of conflicting existing objects
+        when starting to track to an existing directory.
+
+    o   Replaced environment on function that is in the active
+        binding for a tracked object.  Previously, that function
+        could, if constructed via track(obj <- value), have a
+        copy of the tracked object in its environment, which would
+        stay present taking up memory even if the object was
+        flushed out of the tracking environment.
+
+    o   Fixed bug that stopped track.stop(all=TRUE) from working
