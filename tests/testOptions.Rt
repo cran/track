@@ -7,6 +7,7 @@
 > options(width=120)
 > options(error=function() NULL)
 > unlink("tmp6", recursive=TRUE)
+> options(global.track.options=list(cacheKeepFun='none'))
 > track.start("tmp6")
 Tracking <env R_GlobalEnv> (writable) using new directory 'tmp6'
 > x <- 33
@@ -42,59 +43,65 @@ $cache
 [1] TRUE
 
 > track.options()
-$cache
-[1] TRUE
+$alwaysCache
+[1] ".Last"
 
-$cachePolicy
-[1] "none"
-
-$cacheKeepFun
-NULL
-
-$writeToDisk
-[1] FALSE
-
-$maintainSummary
-[1] TRUE
+$alwaysCacheClass
+[1] "ff"
 
 $alwaysSaveSummary
 [1] FALSE
 
-$recordAccesses
-[1] TRUE
-
-$summaryTimes
-[1] 1
-
-$summaryAccess
-[1] 1
-
-$RDataSuffix
-[1] "rda"
-
-$debug
-[1] 0
-
-$autoTrackExcludePattern
-[1] "^\\.track"    "^\\.required"
-
 $autoTrackExcludeClass
 [1] "RODBC"
 
+$autoTrackExcludePattern
+[1] "^\\.track"      "^\\.required"   "^\\*tmp\\*$"    "^.vimplemented" "^.vcoerceable" 
+
 $autoTrackFullSyncWait
-[1] 15
+[1] -1
+
+$cache
+[1] TRUE
+
+$cacheKeepFun
+[1] "none"
+
+$cachePolicy
+[1] "none"
 
 $clobberVars
 [1] ".Random.seed"
-
-$readonly
-[1] FALSE
 
 $compress
 [1] TRUE
 
 $compression_level
 [1] 1
+
+$debug
+[1] 0
+
+$maintainSummary
+[1] TRUE
+
+$RDataSuffix
+[1] "rda"
+
+$readonly
+[1] FALSE
+
+$recordAccesses
+[1] TRUE
+
+$summaryAccess
+[1] 1
+
+$summaryTimes
+[1] 1
+
+$writeToDisk
+[1] FALSE
 
 > # see the effect of the changed options on the status of X (not saved to disk)
 > track.auto(FALSE)
@@ -157,12 +164,12 @@ $cachePolicy
 > # Test how multi-value options are handled
 > track.options("autoTrackExcludePattern")
 $autoTrackExcludePattern
-[1] "^\\.track"    "^\\.required"
+[1] "^\\.track"      "^\\.required"   "^\\*tmp\\*$"    "^.vimplemented" "^.vcoerceable" 
 
 > track.options(autoTrackExcludePattern="pattern")
 > track.options("autoTrackExcludePattern")
 $autoTrackExcludePattern
-[1] "^\\.track"    "^\\.required" "pattern"     
+[1] "^\\.track"      "^\\.required"   "^\\*tmp\\*$"    "^.vimplemented" "^.vcoerceable"  "pattern"       
 
 > track.options("autoTrackExcludeClass")
 $autoTrackExcludeClass
@@ -198,6 +205,7 @@ $autoTrackExcludeClass
 $autoTrackExcludeClass
 [1] "RODBC"
 
+> browser <- function() NULL # just for automated testing -- omit this to really use the browser()
 > track.options(cacheKeepFun=function(objs, inmem, envname) {keep <- rep(FALSE, length(inmem)); browser(); return(keep)})
 > track.options("cacheKeepFun")
 $cacheKeepFun

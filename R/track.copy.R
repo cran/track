@@ -1,9 +1,24 @@
 track.copy <- function(from, to=1, list=NULL, pattern=NULL,
-                       glob=NULL, delete=FALSE, clobber=FALSE, verbose=TRUE, do.untrackable=FALSE) {
+                       glob=NULL, delete=FALSE, clobber=FALSE,
+                       skipExisting=FALSE,
+                       verbose=TRUE, do.untrackable=FALSE) {
     if (!is.numeric(from) && !is.character(from))
         stop("only implemented for numeric or char values for 'from'")
     if (!is.numeric(to) && !is.character(to))
         stop("only implemented for numeric or char values for 'to'")
+    if (length(from) > 1) {
+        res <- vector('list', length(from))
+        names(res) <- as.character(from)
+        for (i in seq(along=from)) {
+            x <- try(track.copy(from=from[[i]], to=to, list=list, pattern=pattern, glob=glob, delete=delete,
+                                clobber=clobber, skipExisting=skipExisting, verbose=verbose, do.untrackable=do.untrackable))
+            if (!is(x, 'try-error'))
+                res[[i]] <- x
+        }
+        return(invisible(NULL))
+    }
+    if (do.untrackable)
+        warning("do.untrackable not yet implemented")
     env.to <- as.environment(to)
     env.from <- as.environment(from)
     if (identical(env.to, env.from))
@@ -16,7 +31,7 @@ track.copy <- function(from, to=1, list=NULL, pattern=NULL,
         stop("cannot copy into a readonly tracking env '", to, "'")
     if (opt.from$readonly && delete)
         stop("cannot move (i.e., copy & delete) from readonly tracking env '", from, "'")
-    all.objs.from <- ls(envir=env.from, all=TRUE)
+    all.objs.from <- ls(envir=env.from, all.names=TRUE)
     all.objs.from <- all.objs.from[!isReservedName(all.objs.from)]
     all.objs.from <- setdiff(all.objs.from, c(".Last", ".Last.sys"))
     fileMap.from <- getFileMapObj(trackingEnv.from)
@@ -44,13 +59,15 @@ track.copy <- function(from, to=1, list=NULL, pattern=NULL,
         return(invisible(list))
     }
     fileMap.to <- getFileMapObj(trackingEnv.to)
-    all.objs.to <- ls(envir=env.to, all=TRUE)
+    all.objs.to <- ls(envir=env.to, all.names=TRUE)
+    if (skipExisting)
+        list <- setdiff(list, all.objs.to)
     if (!clobber && any(list %in% all.objs.to))
         stop("clobber=FALSE and some objects to be copied already exist in 'to': ", paste(intersect(list, all.objs.to), collapse=", "))
     # make sure objects in the source are flushed out to files
     track.flush(envir=env.from, list=intersect(list, names(fileMap.from)))
-    objSmy.to <- getObjSummary(trackingEnv.to)
-    objSmy.from <- getObjSummary(trackingEnv.from)
+    objSmy.to <- getObjSummary(trackingEnv.to, opt=opt.to)
+    objSmy.from <- getObjSummary(trackingEnv.from, opt=opt.from)
     dir.to <- getDataDir(getTrackingDir(trackingEnv.to))
     dir.from <- getDataDir(getTrackingDir(trackingEnv.from))
     auto.to <- track.auto(envir=env.to)
@@ -70,7 +87,7 @@ track.copy <- function(from, to=1, list=NULL, pattern=NULL,
             objSmy.from.i <- NA
             objVal <- get(objName, envir=env.from, inherits=FALSE)
             objClasses <- class(objVal)
-            smyRow <- summaryRow(objName, NULL, obj=objVal, file=NULL, change=TRUE, time=NULL)
+            smyRow <- summaryRow(objName, NULL, obj=objVal, file=NULL, change=TRUE, times=NULL)
         }
         trackInDest <- (trackedInSource || auto.to) && !exclude.from.tracking(objName, objClasses, opt.to)
         if (trackInDest) {
@@ -201,5 +218,5 @@ track.copy <- function(from, to=1, list=NULL, pattern=NULL,
     return(invisible(list))
 }
 
-track.move <- function(from, to=1, list=NULL, pattern=NULL, glob=NULL, delete=TRUE, clobber=FALSE, verbose=TRUE, do.untrackable=FALSE)
-    track.copy(from=from, to=to, list=list, pattern=pattern, glob=glob, delete=delete, clobber=clobber, verbose=verbose, do.untrackable=do.untrackable)
+track.move <- function(from, to=1, list=NULL, pattern=NULL, glob=NULL, delete=TRUE, clobber=FALSE, skipExisting=FALSE, verbose=TRUE, do.untrackable=FALSE)
+    track.copy(from=from, to=to, list=list, pattern=pattern, glob=glob, delete=delete, clobber=clobber, skipExisting=skipExisting, verbose=verbose, do.untrackable=do.untrackable)

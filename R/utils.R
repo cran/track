@@ -110,7 +110,7 @@ tracked.envs <- function(envirs=search()) {
 
 
 # Create or update a row for the summary data frame
-summaryRow <- function(name, sumRow=NULL, obj=NULL, file=NULL, change=FALSE, times=NULL, accessed=TRUE) {
+summaryRow <- function(name, opt, sumRow=NULL, obj=NULL, file=NULL, change=FALSE, times=NULL, accessed=TRUE) {
     tt <- Sys.time()
     new <- FALSE
     if (is.null(sumRow)) {
@@ -120,7 +120,7 @@ summaryRow <- function(name, sumRow=NULL, obj=NULL, file=NULL, change=FALSE, tim
                              modified=tt, created=tt, accessed=tt,
                              A=as.integer(1), ES=as.integer(1), SA=as.integer(0),
                              SW=as.integer(0), PA=as.integer(0), PW=as.integer(0),
-                             stringsAsFactors=FALSE)
+                             cache=NA, stringsAsFactors=FALSE)
         if (!is.null(file) && file.exists(file)
             && !is(info <- try(file.info(file), silent=TRUE), "try-error")) {
             if (length(info$mtime)==1 && !is.na(info$mtime))
@@ -134,12 +134,19 @@ summaryRow <- function(name, sumRow=NULL, obj=NULL, file=NULL, change=FALSE, tim
 
     if (change || new) {
         cl <- class(obj)
-        # neither the first or last element of the returned value of 'class' is
-        # clearly the most useful class to note, so include all classes
-        # class of an object returned by 'glm()': "glm" "lm"
-        # class of an object returned by Sys.time(): "POSIXt"  "POSIXct"
+        ## Neither the first or last element of the returned value of 'class' is
+        ## clearly the most useful class to note, so include all classes as a comma
+        ## separated string.
+        ## E.g., class of an object returned by 'glm()': "glm" "lm"
+        ## while class of an object returned by Sys.time(): "POSIXt" "POSIXct"
         sumRow$class <- if (length(cl)==0) "?" else paste(cl, collapse=",")
         sumRow$mode <- mode(obj)
+        if (new || (change && (is.na(sumRow$cache) || ! (sumRow$cache %in% c("fixedyes", "fixedno"))))) {
+            sumRow$cache <- factor(ifelse(   is.element(name, opt$alwaysCache)
+                                          || any(is.element(cl, opt$alwaysCacheClass)),
+                                          "yes", "no"),
+                                   levels=c("fixedno", "no", "yes", "fixedyes"))
+        }
         l <- try(length(obj), silent=TRUE)
         if (is(l, "try-error"))
             sumRow$length <- NA
@@ -171,32 +178,32 @@ summaryRow <- function(name, sumRow=NULL, obj=NULL, file=NULL, change=FALSE, tim
     return(sumRow)
 }
 
-isReservedName <- function(objname)
+isReservedName <- function(objName)
     ## ".trackingEnv" is a reserved name to allow for storing the
     ## tracking env as an object in the tracked environment instead
     ## of an attribute on the tracked environment.
-    return((regexpr("[\n\r]", objname) > 0)
-           | is.element(objname, c(".trackingEnv", ".trackingDir", ".trackingFileMap",
+    return((regexpr("[\n\r]", objName) > 0)
+           | is.element(objName, c(".trackingEnv", ".trackingDir", ".trackingFileMap",
                                    ".trackingUnsaved", ".trackingSummary",
                                    ".trackingSummaryChanged", ".trackingOptions",
-                                   ".trackingPid", ".trackingCreated",
+                                   ".trackingPid", ".trackingCreated", ".trackingCacheMark",
                                    ".trackAuto", ".trackingFinished")))
 
-objIsTracked <- function(objnames, envir, trackingEnv, all.objs=.Internal(ls(envir, TRUE))) {
-    if (length(objnames)==0)
+objIsTracked <- function(objNames, envir, trackingEnv, all.objs=.Internal(ls(envir, TRUE))) {
+    if (length(objNames)==0)
         return(logical(0))
     fileMap <- getFileMapObj(trackingEnv)
-    return(sapply(objnames, function(objname) {
+    return(sapply(objNames, function(objName) {
         ## an object is already tracked if the following 2 conditions are met:
         ##   - it exists as an activing binding in envir
         ##   - there is an entry in the fileMap in the trackingEnv
         ## Don't use exists() because it gets the object
-        ## if (!exists(objname, envir=envir, inherits=FALSE))
-        if (!is.element(objname, all.objs))
+        ## if (!exists(objName, envir=envir, inherits=FALSE))
+        if (!is.element(objName, all.objs))
             return(FALSE)
-        if (!bindingIsActive(objname, envir))
+        if (!bindingIsActive(objName, envir))
             return(FALSE)
-        if (!is.element(objname, names(fileMap)))
+        if (!is.element(objName, names(fileMap)))
             return(FALSE)
         return(TRUE)
     }))
@@ -291,10 +298,40 @@ readFileMapFile <- function(trackingEnv, dataDir, assignObj) {
     return(fileMap)
 }
 
-getObjSummary <- function(trackingEnv) {
+getObjSummary <- function(trackingEnv, opt, stop.if.not.found=TRUE) {
     objSummary <- mget(".trackingSummary", envir=trackingEnv, ifnotfound=list(NULL))[[1]]
-    if (is.null(objSummary) || !is.data.frame(objSummary))
-        stop("no usable .trackingSummary object in tracking env ", envname(trackingEnv), " - recommend using track.rebuild()")
+    if (stop.if.not.found && is.null(objSummary))
+        stop("no .trackingSummary object in tracking env ", envname(trackingEnv), " - recommend using track.rebuild()")
+    if (stop.if.not.found && !is.data.frame(objSummary))
+        stop(".trackingSummary object found in tracking env ", envname(trackingEnv), " but is not a data frame - recommend using track.rebuild()")
+    if (is.null(objSummary))
+        return(objSummary)
+    ## The 'cache' column was added in version 1.03.
+    ## If we read a .trackingSummary without it, just add it.
+    if (!is.element("cache", names(objSummary)))
+        objSummary$cache <- factor(rep(NA, nrow(objSummary)), levels=c("fixedno", "no", "yes", "fixedyes"))
+    i <- is.na(objSummary$cache)
+    objSummaryChanged <- FALSE
+    ## If there are any NA values in 'cache', set them based on name and class.
+    if (any(i)) {
+        j <- is.element(rownames(objSummary)[i], opt$alwaysCache)
+        if (any(j))
+            objSummary[which(i)[j], "cache"] <- "yes"
+        i <- is.na(objSummary$cache)
+        if (any(i) & length(opt$alwaysCacheClasses)) {
+            j <- sapply(strsplit(objSummary$class[i], ","), is.element, opt$alwaysCacheClasses)
+            if (any(j))
+                objSummary[which(i)[j], "cache"] <- "yes"
+        }
+        i <- is.na(objSummary$cache)
+        if (any(i))
+            objSummary[i, "cache"] <- "no"
+        objSummaryChanged <- TRUE
+    }
+    if (objSummaryChanged) {
+        assign(".trackingSummary", objSummary, envir=trackingEnv)
+        assign(".trackingSummaryChanged", TRUE, envir=trackingEnv)
+    }
     return(objSummary)
 }
 
@@ -313,16 +350,16 @@ envname <- function(envir) {
 
 notyetdone <- function(msg) cat("Not yet done: ", msg, "\n", sep="")
 
-isSimpleName <- function(objname) {
-    return(nchar(objname)<=55
-           && regexpr("^[[:lower:]][._[:digit:][:lower:]]*$", objname, perl=TRUE)==1
-           && regexpr("^(prn|aux|con|nul|com[1-9]|lpt[1-9])(\\.|$)", objname)<0)
+isSimpleName <- function(objName) {
+    return(nchar(objName)<=55
+           && regexpr("^[[:lower:]][._[:digit:][:lower:]]*$", objName, perl=TRUE)==1
+           && regexpr("^(prn|aux|con|nul|com[1-9]|lpt[1-9])(\\.|$)", objName)<0)
 }
 
-makeObjFileName <- function(objname, fileNames) {
-    ## check if we can use objname as a filename
-    if (isSimpleName(objname))
-        return(objname)
+makeObjFileName <- function(objName, fileNames) {
+    ## check if we can use objName as a filename
+    if (isSimpleName(objName))
+        return(objName)
     ## fileNames is a list of vectors of file names that are already used.
     ## Generate a filename of the form _NNN (NNN is a number without a leading zero)
     ## work out what numbers have been used
@@ -358,8 +395,8 @@ setTrackedVar <- function(objName, value, trackingEnv, opt=track.options(trackin
         assign(objName, value, envir=trackingEnv)
     ## Find the directory where we are saving, and create subdirs if necessary
     dir <- getTrackingDir(trackingEnv)
-    for (d in c(dir, getDataDir(dir)))
-        if (!file.exists(d))
+    for (d in unique(c(dir, getDataDir(dir))))
+        if (!dir.exists(d))
             dir.create(d)
     ## Work out the name of the file to use for this var
     if (is.null(file)) {
@@ -386,7 +423,7 @@ setTrackedVar <- function(objName, value, trackingEnv, opt=track.options(trackin
         save.res <- try(save(list=objName, file=fullFile, envir=trackingEnv,
                              compress=opt$compress, compression_level=opt$compression_level), silent=TRUE)
         if (!is(save.res, "try-error")) {
-            if (!opt$cache)
+            if (!opt$cache && !is.element(objName, opt$alwaysCache))
                 remove(list=objName, envir=trackingEnv)
             unsaved <- getUnsavedObj(trackingEnv)
             if (length(unsaved) && is.element(objName, unsaved))
@@ -407,12 +444,12 @@ setTrackedVar <- function(objName, value, trackingEnv, opt=track.options(trackin
             assign(".trackingUnsaved", sort(c(objName, unsaved)), envir=trackingEnv)
     }
     if (opt$maintainSummary) {
-        objSummary <- get(".trackingSummary", envir=trackingEnv, inherits=FALSE)
+        objSummary <- getObjSummary(trackingEnv, opt=opt)
         if (!is.data.frame(objSummary)) {
             warning(".trackingSummary in ", envname(trackingEnv), " is not a data.frame: not updating summary; run track.rebuild()")
         } else {
             if (is.element(objName, rownames(objSummary))) {
-                sumRow <- summaryRow(objName, sumRow=objSummary[objName, , drop=FALSE], obj=value,
+                sumRow <- summaryRow(objName, opt=opt, sumRow=objSummary[objName, , drop=FALSE], obj=value,
                                         file=NULL, change=TRUE, times=times)
             } else {
                 ## Don't have a row in the summary for this object.
@@ -420,14 +457,16 @@ setTrackedVar <- function(objName, value, trackingEnv, opt=track.options(trackin
                     if (is.null(fullFile))
                         fullFile <- file.path(getDataDir(dir), paste(file, opt$RDataSuffix, sep="."))
                     if (!file.exists(fullFile)) {
-                        warning("file '", fullFile, "' does not yet exist (for obj '", objName, "') - will create it when needed")
+                        ## This can happen when an object is created via track.ff() -- want to avoid noise
+                        ## so don't issue this warning.
+                        ## warning("file '", fullFile, "' does not yet exist (for obj '", objName, "') - will create it when needed")
                         fullFile <- NULL
                     }
                 }
                 ## summaryRow will get times from the file if we supply it -- only
                 ## want to do this in the exceptional case that this object was not
                 ## new, but didn't have a summary row.
-                sumRow <- summaryRow(objName, obj=value, file=if (!isNew) fullFile else NULL,
+                sumRow <- summaryRow(objName, opt=opt, obj=value, file=if (!isNew) fullFile else NULL,
                                      change=TRUE, times=times)
                 ## If this is not a new object, record that the times are not accurrate.
                 if (!isNew)
@@ -491,12 +530,12 @@ getTrackedVar <- function(objName, trackingEnv, opt=track.options(trackingEnv=tr
     }
     ##  update the object table (object characteristics, accesses)
     if (opt$maintainSummary && opt$recordAccesses) {
-        objSummary <- get(".trackingSummary", envir=trackingEnv, inherits=FALSE)
+        objSummary <- getObjSummary(trackingEnv, opt=opt)
         if (!is.data.frame(objSummary)) {
             warning(".trackingSummary in ", envname(trackingEnv), " is not a data.frame: not updating objSummary; run track.rebuild()")
         } else {
             if (is.element(objName, rownames(objSummary))) {
-                sumRow <- summaryRow(objName, sumRow=objSummary[objName, , drop=FALSE], obj=value,
+                sumRow <- summaryRow(objName, opt=opt, sumRow=objSummary[objName, , drop=FALSE], obj=value,
                                         file=NULL, change=FALSE, times=NULL)
             } else {
                 if (is.null(fullFile)) {
@@ -514,7 +553,7 @@ getTrackedVar <- function(objName, trackingEnv, opt=track.options(trackingEnv=tr
                         }
                     }
                 }
-                sumRow <- summaryRow(objName, obj=value, file=fullFile, change=FALSE, times=NULL)
+                sumRow <- summaryRow(objName, opt=opt, obj=value, file=fullFile, change=FALSE, times=NULL)
                 ## Since this is not a new object, but this we are creating a new summary
                 ## row for it, record that the times are not accurrate
                 sumRow$A <- 0
@@ -624,6 +663,14 @@ exclude.from.tracking <- function(objName, objClasses=NULL, opt) {
     for (re in opt$autoTrackExcludePattern)
         exclude <- exclude | regexpr(re, objName) >= 1
     exclude
+}
+
+dir.exists <- function(dir) {
+    ## Need this because sometimes directories on network drives
+    ## under windows aren't seen by file.exists().  (Even if
+    ## they have files in them.  But the tests for existence for
+    ## the files in them work fine.)
+    file.exists(dir) || (file.access(dir, mode=0)==0)
 }
 
 if (FALSE) {

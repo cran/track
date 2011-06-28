@@ -6,31 +6,7 @@ track.options <- function(..., pos=1, envir=as.environment(pos), values=list(...
     ##
     ## only.preprocess: return a complete list of new options, with values as specified as arguments,
     ##   and others as defaults
-    ## valid options are:
-    ##   summaryTimes: logical, or integer value 0,1,2,3
-    ##   summaryAccess: logical, or integer value 0,1,2,3,4
-    ##   cache: logical (default TRUE) (keep objects in memory?)
-    ##   cachePolicy: char vector (default "eotPurge") (when to keep objects in memory)
-    ##   cacheKeepFun: char vector or function (default NULL): function to call
-    ##     to determine which objects to keep in cache
-    ##   writeToDisk: logical (default TRUE) (always write changed objects to disk?)
-    ##     when objects are written to disk depends on cachePolicy:
-    ##       cachePolicy='none': write objects immediately on a change
-    ##       cachePolicy='eotPurge': write changed objects at the end of a top-level task
-    ##   recordAccesses: logical (default TRUE) if TRUE, record time & number of get()'s
-    ##   maintainSummary: logical (default TRUE) if TRUE, record time & number of accesses
-    ##   alwaysSaveSummary: logical (default TRUE) if TRUE, always save the summary on any change
-    ##   RDataSuffix: character (default "rda")
-    ##   debug: integer (default 0) if > 0, print some diagnostic debugging messages
-    ##   readonly: logical (default FALSE for track.start(), TRUE for track.attach())
-    ##   autoTrackExcludePattern: vector of strings: regular expressions describing which variables not
-    ##      to auto-track (default "^\\.track", "^.required$")
-    ##   autoTrackExcludeClass: vector of strings: class names for objects that should
-    ##      not be auto-tracked (default "RODBC")
-    ##   autoTrackFullSyncWait: wait this many seconds between doing a full sync
-    ##   clobberVars: vector of string specifying variables to be clobbered silently when attaching a tracking db
-    ##   compress: character or logical, TRUE/FALSE, gzip, xz, bzip2, none
-    ##   compression_level: integer 1-9
+    ## See track.options.Rd DETAILS section for description of valid options
     trackingEnvSupplied <- !missing(trackingEnv) && !is.null(trackingEnv)
     if (only.preprocess) {
         currentOptions <- old.options
@@ -88,10 +64,11 @@ track.options <- function(..., pos=1, envir=as.environment(pos), values=list(...
     ## If we were called like track.options(values=NULL), make this like track.options()
     if (length(values)==1 && is.null(names(values)) && is.null(values[[1]]))
          values <- list()
-    optionNames <- c("cache", "cachePolicy", "cacheKeepFun", "writeToDisk", "maintainSummary",
-                     "alwaysSaveSummary", "recordAccesses", "summaryTimes", "summaryAccess",
-                     "RDataSuffix", "debug", "autoTrackExcludePattern", "autoTrackExcludeClass",
-                     "autoTrackFullSyncWait", "clobberVars", "readonly", "compress", "compression_level")
+    optionNames <- c("alwaysCache", "alwaysCacheClass", "alwaysSaveSummary", "autoTrackExcludeClass",
+                     "autoTrackExcludePattern", "autoTrackFullSyncWait", "cache",
+                     "cacheKeepFun", "cachePolicy", "clobberVars", "compress", "compression_level",
+                     "debug", "maintainSummary", "RDataSuffix", "readonly", "recordAccesses",
+                     "summaryAccess", "summaryTimes", "writeToDisk")
     if (!is.null(names(values))) {
         ## Attempt to set some of the options (including saving to file)
         ## and return the old values.
@@ -118,7 +95,7 @@ track.options <- function(..., pos=1, envir=as.environment(pos), values=list(...
     }
 
     if (!all(is.element(query.values, optionNames)))
-        stop("unknown option names: ", paste("'", setdiff(values, optionNames), "'", sep="", collapse=", "))
+        stop("unknown option names: ", paste("'", setdiff(query.values, optionNames), "'", sep="", collapse=", "))
 
     ## See if we need to repair any missing options (shouldn't need to do this)
     ## This is where to set defaults
@@ -130,14 +107,18 @@ track.options <- function(..., pos=1, envir=as.environment(pos), values=list(...
         names(need.value) <- need.value
         repaired <- lapply(need.value, function(x)
                            switch(x, cache=TRUE, cachePolicy="eotPurge",
-                                  cacheKeepFun=NULL,
+                                  cacheKeepFun="track.plugin.lru",
+                                  alwaysCache=c(".Last"),
+                                  alwaysCacheClass=c("ff"),
                                   readonly=FALSE, writeToDisk=TRUE,
                                   maintainSummary=TRUE, alwaysSaveSummary=FALSE,
                                   recordAccesses=TRUE,
                                   summaryTimes=1, summaryAccess=1, RDataSuffix="rda",
-                                  debug=0, autoTrackExcludePattern=c("^\\.track", "^\\.required"),
+                                  debug=0,
+                                  autoTrackExcludePattern=c("^\\.track", "^\\.required", "^\\*tmp\\*$", "^.vimplemented", "^.vcoerceable"),
                                   autoTrackExcludeClass=c("RODBC"),
-                                  autoTrackFullSyncWait=15, clobberVars=".Random.seed",
+                                  autoTrackFullSyncWait=-1,
+                                  clobberVars=c(".Random.seed"),
                                   compress=TRUE, compression_level=1))
         currentOptions <- c(currentOptions, repaired)
     }
@@ -158,17 +139,19 @@ track.options <- function(..., pos=1, envir=as.environment(pos), values=list(...
                 # don't do the standard NA & length checks
                 special <- TRUE
                 f <- values[[opt]]
-                if (!is.function(f)) {
-                    if (is.character(f) && length(f)==1) {
-                        f <- get(f)
-                    } else if (is.name(f)) {
-                        f <- eval(f)
+                if (!identical(f, "none")) {
+                    if (!is.function(f)) {
+                        if (is.character(f) && length(f)==1) {
+                            f <- get(f)
+                        } else if (is.name(f)) {
+                            f <- eval(f)
+                        }
                     }
+                    if (!is.function(f) && !is.null(f))
+                        stop("cacheKeepFun must be a function or the name of a function")
+                    if (!is.null(f) && !all(is.element(c("objs", "inmem", "envname"), names(formals(f)))))
+                        stop("cacheKeepFun must have an arguments namd 'objs' and 'envname'")
                 }
-                if (!is.function(f) && !is.null(f))
-                    stop("cacheKeepFun must be a function or the name of a function")
-                if (!is.null(f) && !all(is.element(c("objs", "inmem", "envname"), names(formals(f)))))
-                    stop("cacheKeepFun must have an arguments namd 'objs' and 'envname'")
             } else if (opt=="readonly") {
                 if (!is.logical(values[[opt]]))
                     values[[opt]] <- as.logical(values[[opt]])
@@ -196,7 +179,12 @@ track.options <- function(..., pos=1, envir=as.environment(pos), values=list(...
             } else if (opt=="debug") {
                 if (!is.integer(values[[opt]]))
                     values[[opt]] <- as.integer(values[[opt]])
-            } else if (opt=="autoTrackExcludePattern" || opt=="autoTrackExcludeClass") {
+            } else if (opt=="autoTrackExcludePattern" || opt=="autoTrackExcludeClass"
+                       || opt=="alwaysCacheClass") {
+                single <- FALSE
+                if (!is.character(values[[opt]]))
+                    values[[opt]] <- as.character(values[[opt]])
+            } else if (opt=="alwaysCache") {
                 single <- FALSE
                 if (!is.character(values[[opt]]))
                     values[[opt]] <- as.character(values[[opt]])
@@ -233,13 +221,14 @@ track.options <- function(..., pos=1, envir=as.environment(pos), values=list(...
                 if (single && length(values[[opt]])!=1)
                     stop("option ", opt, " must have a value of length 1")
             }
-            ## Now, how we put the value in depends on whethr it can have single or multiple values
+            ## Now, how we put the value in depends on whether it can have single or multiple values
+            ## Do assignment like new.values[opt] <- list(value) so that it works with value==NULL
             if (single || clear)
-                new.values[[opt]] <- values[[opt]]
+                new.values[opt] <- list(values[[opt]])
             else if (delete)
-                new.values[[opt]] <- setdiff(new.values[[opt]], values[[opt]])
+                new.values[opt] <- list(setdiff(new.values[[opt]], values[[opt]]))
             else
-                new.values[[opt]] <- unique(c(new.values[[opt]], values[[opt]]))
+                new.values[opt] <- list(unique(c(new.values[[opt]], values[[opt]])))
         }
 
         if (only.preprocess)
@@ -266,4 +255,3 @@ track.options <- function(..., pos=1, envir=as.environment(pos), values=list(...
     else
         return(option.values)
 }
-

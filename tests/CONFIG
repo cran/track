@@ -1,1 +1,2 @@
-Debug: TRUE
+Debug: FALSE
+StopOnError: FALSE

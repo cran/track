@@ -4,6 +4,7 @@ track.stop <- function(pos=1, envir=as.environment(pos), all=FALSE, stop.on.erro
         force.detach <- TRUE
         detach <- TRUE
     }
+    debug <- !identical(getOption("track.debug", sessionEnd), FALSE)
     ## track.stop() with no arguments behaves analogously
     ## to track.start() with no args, and works on pos=1 (globalenv)
     ## if (missing(pos) && missing(envir) && missing(all)) {
@@ -27,7 +28,7 @@ track.stop <- function(pos=1, envir=as.environment(pos), all=FALSE, stop.on.erro
             if (stop.on.error)
                 track.stop(envir=as.environment(e.name), keepVars=keepVars, sessionEnd=sessionEnd)
             else
-                try(track.stop(envir=as.environment(e.name), keepVars=keepVars, sessionEnd=sessionEnd))
+                try(track.stop(envir=as.environment(e.name), keepVars=keepVars, sessionEnd=sessionEnd, stop.on.error=FALSE))
     } else {
         if (!env.is.tracked(envir)) {
             if (sessionEnd)
@@ -49,9 +50,20 @@ track.stop <- function(pos=1, envir=as.environment(pos), all=FALSE, stop.on.erro
             ## If this is an auto-update tracking env, get vars and files in sync,
             ## otherwise we presume the user knows what they're doing -- ignore
             ## out-of-sync things
-            if (auto$on)
-                track.sync(envir=envir, master="envir", full=TRUE, trackingEnv=trackingEnv)
-            track.flush(envir=envir)
+            if (auto$on) {
+                if (debug)
+                    cat("Calling track.sync(envir = ", environmentName(envir), ")\n", sep="")
+                if (stop.on.error)
+                    track.sync(envir=envir, master="envir", full=TRUE, trackingEnv=trackingEnv)
+                else
+                    try(track.sync(envir=envir, master="envir", full=TRUE, trackingEnv=trackingEnv))
+            }
+            if (debug)
+                cat("Calling track.flush(envir = ", environmentName(envir), ")\n", sep="")
+            if (stop.on.error)
+                track.flush(envir=envir, force=TRUE)
+            else
+                try(track.flush(envir=envir, force=TRUE))
         }
         if (keepVars) {
             for (var in tracked.vars) {
@@ -65,8 +77,9 @@ track.stop <- function(pos=1, envir=as.environment(pos), all=FALSE, stop.on.erro
             ## a readonly tracking env is being detached, so we can hope that
             ## the active bindings are garbage collected when the tracked
             ## environment is removed from the search path.
-            if (!environmentIsLocked(envir))
+            if (!environmentIsLocked(envir)) {
                 remove(list=tracked.vars, envir=envir)
+            }
             if (sessionEnd && identical(envir, globalenv())) {
                 ## Would be nice to print this message here, but
                 ## printing messages from .Last is tricky because of the order
@@ -98,10 +111,10 @@ track.stop <- function(pos=1, envir=as.environment(pos), all=FALSE, stop.on.erro
         ## of everything except tracking reserved names, detach it.
         if (detach && exists(".trackingCreated", envir=envir, inherits=FALSE)
             && !identical(globalenv(), envir)) {
-            vars <- ls(envir=trackingEnv, all=TRUE)
+            vars <- ls(envir=envir, all.names=TRUE)
             pos <- match(environmentName(envir), search())
             vars <- vars[!isReservedName(vars)]
-            if (length(vars)==0 || force.detach) {
+            if (length(vars)==0 || force.detach || environmentIsLocked(envir)) {
                 if (!is.na(pos)) {
                     if (verbose)
                         cat("Removing", envname(envir), "from the search path\n")
@@ -110,10 +123,9 @@ track.stop <- function(pos=1, envir=as.environment(pos), all=FALSE, stop.on.erro
                     cat("Strange: can't find", envname(envir), "on the search path\n")
                 }
             } else {
-                warning("Can't remove ", envname(envir), " from the search path: still contains some variables: ", paste(vars[!isReservedName(vars)], collapse=", "), "\n", sep="")
+                warning("No longer tracking it, but can't remove ", envname(envir), " from the search path: still contains some variables: ", paste(vars[!isReservedName(vars)], collapse=", "), "\n", sep="")
             }
         }
     }
     return(invisible(NULL))
 }
-

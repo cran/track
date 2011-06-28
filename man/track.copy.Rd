@@ -8,15 +8,16 @@
   Copy or move objects from one tracking db to another.
 }
 \usage{
-track.copy(from, to = 1, list = NULL, pattern = NULL, glob = NULL,
-           delete = FALSE, clobber = FALSE, verbose = TRUE, do.untrackable = FALSE)
-track.move(from, to = 1, list = NULL, pattern = NULL, glob = NULL,
-           delete = TRUE, clobber = FALSE, verbose = TRUE, do.untrackable = FALSE)
+track.copy(from, to = 1, list = NULL, pattern = NULL, glob = NULL, delete = FALSE,
+           clobber = FALSE, skipExisting = FALSE, verbose = TRUE, do.untrackable = FALSE)
+track.move(from, to = 1, list = NULL, pattern = NULL, glob = NULL, delete = TRUE,
+           clobber = FALSE, skipExisting = FALSE, verbose = TRUE, do.untrackable = FALSE)
 }
 \arguments{
   \item{from}{
     The position on the search list of the source db.  Can be numeric or
-    the name as returned by \code{search()}.
+    the name as returned by \code{search()}.  Can be a vector, in which
+    case the action is repeated for each element of \code{from}.
 }
   \item{to}{
     The position on the search list of the destination db.  Can be numeric or
@@ -35,14 +36,17 @@ track.move(from, to = 1, list = NULL, pattern = NULL, glob = NULL,
   Should the objects in the source db be removed? The default is
   \code{FALSE} for \code{track.copy} and \code{TRUE} for \code{track.move}.
 }
-  \item{clobber}{
+\item{clobber}{
   Should the objects in the destination db be overwritten?
+}
+\item{skipExisting}{
+  If \code{TRUE}, skip objects where an object of the same name already exists in the destination db .
 }
 \item{verbose}{
   If \code{TRUE}, write out what is being done.
 }
 \item{do.untrackable}{
-  If \code{TRUE}, also copy untrackable objects.
+  If \code{TRUE}, also copy untrackable objects.  Not yet implemented.
 }
 }
 \details{
@@ -60,7 +64,7 @@ track.move(from, to = 1, list = NULL, pattern = NULL, glob = NULL,
   flag conflicts with what it needs to do.
 
   The metadata in source and destination tracking dbs (i.e., the file
-  map and the object summary) are update after each object is copied.
+  map and the object summary) are updated after each object is copied.
   Thus, if an error occurs during copying, e.g., due to filesystem
   permissions or lack of space, the source and destination dbs will be
   left in a consistent state.
@@ -68,6 +72,8 @@ track.move(from, to = 1, list = NULL, pattern = NULL, glob = NULL,
   \code{track.move} calls \code{track.copy} with a default of
   \code{delete=TRUE} to remove the source object.
 
+  \strong{NB: \code{do.untrackable} is not yet implemented:
+  untracked/untrackable objects are ignored.}
   By default, untrackable objects in the source tracking db will not be
   copied or moved, and a warning will be given.  The rules for
   untrackability are those of the destination db, as specified by the

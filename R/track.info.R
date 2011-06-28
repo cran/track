@@ -6,7 +6,7 @@ track.info <- function(pos=1, envir=as.environment(pos), all=TRUE) {
         names(env.list) <- envirs[is.tracked]
         for (j in seq(along=envirs))
             if (!is.tracked[j] && exists(".trackingEnv", envir=as.environment(envirs[j]), inherits=FALSE))
-                warning("env ", envirs[j], " (pos ", j, " on search list) appears to be an inactive tracking environment, saved from another session and loaded here inappropriately")
+                warning("env ", envirs[j], " (pos ", j, " on search list) appears to be an inactive tracked environment, saved from another session and loaded here inappropriately (see ?track.info)")
         res <- data.frame(row.names=NULL, env.name=envirs[is.tracked],
                           pos=seq(len=length(envirs))[is.tracked])
     } else {
@@ -36,17 +36,18 @@ track.info <- function(pos=1, envir=as.environment(pos), all=TRUE) {
     if (nrow(res)) {
         callback.names <- getTaskCallbackNames()
         res <-  cbind(res, data.frame(row.names=NULL, do.call("rbind", lapply(env.list,
-                                      function(e) {
-                                          auto <- mget(".trackAuto", ifnotfound=list(list(on=FALSE)),
-                                                       envir=getTrackingEnv(e))[[1]]$on
-                                          if (auto && !is.element(paste("track.auto:", envname(e), sep=""), callback.names)) {
-                                              pos <- which(sapply(envirs, function(ee) identical(as.environment(ee), e)))
-                                              warning("Task callback ", paste("track.auto:", envname(e), sep=""),
-                                                      " is missing; do track.auto(TRUE, pos=", pos, ") to reinstate")
-                                          }
-                                          c(unlist(track.options(envir=e, c("readonly", "cache"))),
-                                            auto=auto, dir=track.dir(envir=e))}
-                                      ))))
+                      function(e) {
+                           auto <- mget(".trackAuto", ifnotfound=list(list(on=FALSE)),
+                                        envir=getTrackingEnv(e))[[1]]$on
+                           opt <- track.options(envir=e, c("readonly", "cache"))
+                           data.frame(readonly=opt$readonly, cache=opt$cache,
+                                      auto=auto, dir=track.dir(envir=e))}
+        ))))
+        if (any(res$auto) && !is.element("track.auto", callback.names)) {
+            pos <- (res$pos[res$auto])[1]
+            warning("Task callback track.auto",
+                    " is missing; do track.auto(TRUE, pos=", pos, ") to reinstate")
+        }
     } else {
         res <- data.frame(env.name=character(0),
                           pos=integer(0),

@@ -2,15 +2,12 @@
 \alias{track.start}
 \alias{track.stop}
 \alias{track.rescan}
-\alias{track.info}
 \alias{track.Last}
 % \alias{.Last}
-\alias{env.is.tracked}
-\alias{tracked.envs}
 %- Also NEED an '\alias' for EACH other topic documented here.
 \title{ Setup and stop tracking }
 \description{
-  Functions to setup and stop tracking.
+  Functions to setup and stop tracking, and resync to a changed disk db
 }
 \section{Simple Usage}{
 These functions have many arguments providing much control over
@@ -19,24 +16,22 @@ tracking, but the arguments used in simple usage are:
 track.start()
 track.start(dir = "rdatadir")
 track.stop(pos = 1, all = FALSE)
-track.rescan(pos = 1)
-track.info()
+track.rescan(pos = 2)
 }
 }
 \usage{
 track.start(dir="rdatadir", pos = 1, envir = as.environment(pos),
         create = TRUE,
         clobber = c("no", "files", "variables", "vars", "var"),
+        discardMissing = FALSE,
         cache = NULL, cachePolicy = NULL, options = NULL,
         RDataSuffix = NULL, auto = NULL, readonly = FALSE,
         lockEnv = FALSE, check.Last = TRUE, verbose = TRUE)
 track.stop(pos = 1, envir = as.environment(pos), all = FALSE,
         stop.on.error = FALSE, keepVars = FALSE, sessionEnd = FALSE,
         verbose = TRUE, detach = TRUE, callFrom = NULL)
-track.info(pos = 1, envir = as.environment(pos), all=TRUE)
-track.rescan(pos = 1, envir = as.environment(pos), forgetModified = FALSE, level = c("high", "low"), dryRun = FALSE)
-env.is.tracked(pos = 1, envir = as.environment(pos))
-tracked.envs(envirs=search())
+track.rescan(pos = 1, envir = as.environment(pos), discardMissing = FALSE,
+             forgetModified = FALSE, level = c("high", "low"), dryRun = FALSE)
 track.Last()
 % .Last()
 }
@@ -47,7 +42,7 @@ track.Last()
     (default is 1 for the global environment)}
   \item{envir}{ The environment being tracked.  This is an alternate way
     (to the use of \code{pos=})
-  of specifying the environment being tracked, but should be rarely needed.}
+    of specifying the environment being tracked, but should be rarely needed.}
   \item{create}{ If \code{TRUE}, create the tracking directory if it
     doesn't exist }
   \item{clobber}{ Controls action taken when there are objects of the
@@ -57,6 +52,8 @@ track.Last()
   \code{vars} or \code{var} means
     use the version in \code{envir} (and overwrite the version in the
     tracking directory)}
+  \item{discardMissing}{ Discard all information about objects whose save
+    file is missing?}
   \item{cache}{ Should objects be keep cached in memory?  Default is \code{TRUE}.  This option is a shorthand way of supplying \code{options=list(cache=...)}.}
   \item{cachePolicy}{ Policy for keeping cached objects in memory.
   Default is \code{tltPurge}, for which cached objects are removed
@@ -88,9 +85,7 @@ track.Last()
   it (though not if it was not created by \code{track.attach}).}
   \item{callFrom}{A character string used in a message saying where
   \code{track.stop()} was called from.}
-  \item{envirs}{A list or vector of objects that can be interpreted as
-    environments by \code{as.environment}}
-  \item{forgetModified}{ If \code{TRUE}, discard copies that are
+  \item{forgetModified}{ If \code{TRUE}, discard the versions of objects that are
     modified and in memory }
   \item{RDataSuffix}{The suffix to use for \code{RData} files.  This
     should not normally need to be specified.}
@@ -133,9 +128,6 @@ track.Last()
       environments, because tracked envs at positions other than 1 will
       be attached readonly.)}
 
-    \item{\code{track.info}:}{ returns a dataframe of information about
-      environments currently tracked.}
-
 \item{\code{track.rescan}:}{ Rescan the tracking dir, so that if anything has changed there,
 the current variables on file will be used instead of any cached
 in memory.
@@ -160,17 +152,15 @@ available.
 \value{
     \item{track.start, track.stop, track.rescan:}{all return \code{invisible(NULL)} (this
       may change if it becomes clear what useful return values would be)}
-    \item{env.is.tracked:}{returns \code{TRUE} or \code{FALSE}}
-    \item{tracked.envs:}{with no arguments, it returns the names of
-      tracked environment that are on the search list.  If given an
-      argument that is a vector of environments (or environment names),
-      it returns the subset of that vector that are tracked environments.}
     \item{track.Last:}{calls \code{track.stop(all=TRUE)} to ensure
       that all tracking information and objects are written to files,
    and removes tracked variables from the environment.}
 }
-\author{Tony Plate <tplate@acm.org>}
-\seealso{ \link[=track-package]{Overview} and \link[=track.design]{design} of the \code{track} package. }
+\author{Tony Plate \email{tplate@acm.org}}
+\seealso{
+  \link[=track-package]{Overview} and \link[=track.design]{design} of
+  the \code{track} package.
+}
 \examples{
 library(track)
 unlink("tmp1", recursive=TRUE)
@@ -179,6 +169,8 @@ x <- 33
 X <- array(1:24, dim=2:4)
 Y <- list(a=1:3,b=2)
 X[2] <- -1
+track.datadir(relative=TRUE)
+track.filename(list=c("x", "X"))
 track.summary(time=0, access=1, size=FALSE)
 env.is.tracked(pos=1)
 env.is.tracked(pos=2)

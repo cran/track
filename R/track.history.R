@@ -1,4 +1,4 @@
-track.history.start <- function(file=NULL, width=NULL, style=NULL, times=NULL, load=FALSE, verbose=FALSE, message="Session start") {
+track.history.start <- function(file=NULL, width=NULL, style=NULL, times=NULL, load=TRUE, verbose=FALSE, message="Session start") {
     if (!is.null(file))
         options(incr.hist.file=file)
     if (!is.null(width))
@@ -75,14 +75,20 @@ track.history.load <- function(times=FALSE) {
 }
 
 track.history.writer <- function(expr, value, ok, visible) {
+    ## If we are called from a prompt in a browser, don't do anything
+    if (length(sys.calls()) > 1)
+        return(TRUE)
     method <- "last" # set the internal algorithm
     ## Always write time stamps to the incremental history file -- but
     ## do it in a way that prevents the time stamps from appearing in
     ## the interactive history.
     trace <- getOption("track.callbacks.trace", FALSE)
-    if (trace) {
+    if (trace==1) {
         cat("track.history.writer: entered at ", date(), "\n", sep="")
         stime <- proc.time()
+    } else if (trace==2) {
+        cat("[h:")
+        flush.console()
     }
     file <- getOption("incr.hist.file")
     if (is.null(file) || nchar(file)==0)
@@ -110,6 +116,7 @@ track.history.writer <- function(expr, value, ok, visible) {
     ## This bug has been fixed in R-2.12.0.
     ## But for safety, turn the default back to "full"
     if (style=="fast") {
+        if (trace==2) {cat("f"); flush.console()}
         ## Fast style deparse last expr.
         ## This will cause R-2.11.1 to crash after sourcing an empty file!!
         width <- getOption("incr.hist.width")
@@ -120,6 +127,7 @@ track.history.writer <- function(expr, value, ok, visible) {
         cat(c(if (times) paste("##------", date(), "------##"),
               deparse(expr, width)), sep="\n", file=file, append=TRUE)
     } else {
+        if (trace==2) {cat("s"); flush.console()}
         ## Slow style -- write raw history out to a file, then read it
         ## back in and identify the last command, which can be multi-line.
         file1 <- tempfile("Rrawhist")
@@ -139,6 +147,7 @@ track.history.writer <- function(expr, value, ok, visible) {
         rawhist <- readLines(file1)
         unlink(file1)
         if (method=="timestamps") {
+            if (trace==2) {cat("t"); flush.console()}
             posns <- grep("^##------.*------##$", rawhist)
             stamp.lines <- NA
             if (length(posns))
@@ -150,6 +159,7 @@ track.history.writer <- function(expr, value, ok, visible) {
             if (stamp.lines <= length(rawhist))
                 cat(rawhist[seq(stamp.lines, length(rawhist))], sep="\n", file=file, append=TRUE)
         } else {
+            if (trace==2) {cat("l"); flush.console()}
             ## Use the last lines to limit the possible starts
             ## The tricky thing about searching for the prior command is
             ## that commands can be multi-line.  For example, suppose we have
@@ -173,9 +183,16 @@ track.history.writer <- function(expr, value, ok, visible) {
             }
         }
     }
-    if (trace) {
+    if (trace==1) {
         cat("track.history.writer: exited at ", date(),
              " (", paste(round(1000*(proc.time()-stime)[1:3]), c("u", "s", "e"), sep="", collapse=" "), ")\n", sep="")
+    } else if (trace==2) {
+        cat("]")
+        ## don't need a newline if track.auto is after us in the list of task callbacks
+        ii <- match(c("track.history.writer", "track.auto"), getTaskCallbackNames())
+        if (any(is.na(ii)) || diff(ii) < 0)
+            cat("\n")
+        flush.console()
     }
     TRUE
 }

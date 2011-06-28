@@ -11,7 +11,7 @@ track.rename <- function(old, new, pos=1, envir=as.environment(pos), clobber=FAL
     opt <- track.options(trackingEnv=trackingEnv)
     if (opt$readonly)
         stop("cannot rename in a readonly tracking env")
-    all.objs <- ls(envir=envir, all=TRUE)
+    all.objs <- ls(envir=envir, all.names=TRUE)
     fileMap <- getFileMapObj(trackingEnv)
     if (any(isReservedName(new)))
         stop("'new' contains reserved names: ", new[isReservedName(new)])
@@ -27,7 +27,7 @@ track.rename <- function(old, new, pos=1, envir=as.environment(pos), clobber=FAL
              paste(setdiff(intersect(old, names(fileMap)), all.objs), collapse=", "))
     # make sure tracked objects are flushed out to files
     track.flush(envir=envir, list=intersect(union(new, old), names(fileMap)))
-    objSmy <- getObjSummary(trackingEnv)
+    objSmy <- getObjSummary(trackingEnv, opt=opt)
     dir <- getDataDir(getTrackingDir(trackingEnv))
     # what makes this tricky:
     #   (1) overlap between 'new' and 'old' names -- need to make temp
@@ -47,7 +47,7 @@ track.rename <- function(old, new, pos=1, envir=as.environment(pos), clobber=FAL
     old.isCached <- !old.isTracked & is.element(old, new)
     if (any(old.isCached | (!new.isTracked & old.isTracked))) {
         old.cacheEnv <- new.env()
-        on.exit(remove(list=ls(envir=old.cacheEnv, all=TRUE), envir=old.cacheEnv), add=TRUE)
+        on.exit(remove(list=ls(envir=old.cacheEnv, all.names=TRUE), envir=old.cacheEnv), add=TRUE)
         for (objName in old[old.isCached | (!new.isTracked & old.isTracked)])
             assign(objName, envir=old.cacheEnv, get(objName, envir=envir, inherits=FALSE))
     }
@@ -61,7 +61,7 @@ track.rename <- function(old, new, pos=1, envir=as.environment(pos), clobber=FAL
         old.tempDir <- tempfile(pattern="__renamedir", tmpdir=dir)
         dir.create(old.tempDir)
         on.exit(unlink(old.tempDir, recursive=TRUE), add=TRUE)
-        if (!file.exists(old.tempDir))
+        if (!dir.exists(old.tempDir))
             stop("failed to create temporary directory '", old.tempDir, "' to use for temp copies of files")
         for (objName in old[old.inTempFile]) {
             oldFile <- file.path(dir, paste(fileMap[objName], opt$RDataSuffix, sep="."))
@@ -84,7 +84,7 @@ track.rename <- function(old, new, pos=1, envir=as.environment(pos), clobber=FAL
         if (length(dispose)) {
             track.remove(list=dispose, envir=envir)
             fileMap <- getFileMapObj(trackingEnv)
-            objSmy <- getObjSummary(trackingEnv)
+            objSmy <- getObjSummary(trackingEnv, opt=opt)
         }
     }
     # Where we have names in both old and new, can't update fileMap and
@@ -192,7 +192,7 @@ track.rename <- function(old, new, pos=1, envir=as.environment(pos), clobber=FAL
                 objSmy.changed <- TRUE
             }
         } else {
-            stop("shouldn't happen: old objname is not tracked and new objname is tracked: old='",
+            stop("shouldn't happen: old objName is not tracked and new objName is tracked: old='",
                  oldObjName, "', new='", newObjName, "'")
         }
         if (objSmy.changed) {
@@ -243,6 +243,3 @@ track.rename <- function(old, new, pos=1, envir=as.environment(pos), clobber=FAL
     }
     return(invisible(list(old=old, new=new)))
 }
-
-track.move <- function(from, to=1, list=NULL, pattern=NULL, glob=NULL, delete=TRUE, clobber=FALSE, verbose=TRUE, do.untrackable=FALSE)
-    track.copy(from=from, to=to, list=list, pattern=pattern, glob=glob, delete=delete, clobber=clobber, verbose=verbose, do.untrackable=do.untrackable)

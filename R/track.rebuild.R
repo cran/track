@@ -114,7 +114,7 @@ track.rebuild <- function(pos=1, envir=as.environment(pos), dir=NULL, fix=FALSE,
         ## (different names for the same directory) by creating a
         ## temporary file in the directory, and then looking for it.
         activeTracking <- FALSE
-        if (!file.exists(dir))
+        if (!dir.exists(dir))
             stop("'", dir, "' does not exist")
         tmpfile <- tempfile(".rebuildTest", dir)
         tmpfilebase <- basename(tmpfile)
@@ -179,7 +179,7 @@ track.rebuild <- function(pos=1, envir=as.environment(pos), dir=NULL, fix=FALSE,
         suffixRegExp <- gopt$RDataSuffixes
     else
         suffixRegExp <- paste("(", paste(gopt$RDataSuffixes, collapse="|", sep=""), ")", sep="")
-    if (!file.exists(file.path(dataDir)))
+    if (!dir.exists(file.path(dataDir)))
         stop("dataDir does not exist: \"", dataDir, "\"")
 
     ## Try to work out the suffix being used
@@ -404,11 +404,11 @@ track.rebuild <- function(pos=1, envir=as.environment(pos), dir=NULL, fix=FALSE,
     ## Read the summary, into summary and envSummary
     ## Will keep both of these because and get most
     ## recent info for each object one at a time.
-    summarySkel <- summaryRow(name="")
+    summarySkel <- summaryRow(name="", opt=opt)
     envSummary <- summarySkel[0,]
     if (activeTracking) {
         if (exists(".trackingSummary", envir=trackingEnv, inherits=FALSE)) {
-            envSummary <- get(".trackingSummary", envir=trackingEnv, inherits=FALSE)
+            envSummary <- getObjSummary(trackingEnv, opt=opt)
             if (!is.data.frame(envSummary)) {
                 cat("Tracking summary from tracking environment is not a data frame - discarding it.\n")
                 envSummary <- NULL
@@ -436,7 +436,7 @@ track.rebuild <- function(pos=1, envir=as.environment(pos), dir=NULL, fix=FALSE,
             cat("Strange: '", abbrevWD(file.path(dataDir, paste(".trackingSummary", opt$RDataSuffix, sep="."))),
                 " does not containg a '.trackingSummary' object -- rebuilding...\n")
         } else {
-            fileSummary <- get(".trackingSummary", tmpenv, inherits=FALSE)
+            fileSummary <- getObjSummary(tmpenv, opt=opt)
             if (!is.data.frame(fileSummary)) {
                 cat("Tracking summary read from file is not a data frame - ignoring it.\n")
                 fileSummary <- NULL
@@ -455,7 +455,7 @@ track.rebuild <- function(pos=1, envir=as.environment(pos), dir=NULL, fix=FALSE,
         else
             cat("Using tracking summary read from file.\n")
 
-        objs <- ls(all=TRUE, envir=tmpenv)
+        objs <- ls(all.names=TRUE, envir=tmpenv)
         if (length(objs))
             remove(list=objs, envir=tmpenv)
     } else {
@@ -509,19 +509,19 @@ track.rebuild <- function(pos=1, envir=as.environment(pos), dir=NULL, fix=FALSE,
             cat(paste(format(c("Object", names(fileMap)[i])), " ", format(c("File", paste(fileMap[i], suffix, sep="."))), "\n", sep=""), sep="")
             filesToRead <- c(filesToRead, fileMap[i])
         }
-        ## Reuse data for objects in the fileMap that are in the summary
-        ## and have objects or files.
-        ## First look at objects in the env
-        objNames <- intersect(names(fileMap), row.names(envSummary))
-        reuseSummary <- envSummary[objNames,,drop=FALSE]
-        objNames <- setdiff(intersect(names(fileMap), row.names(fileSummary)), objNames)
-        if (length(objNames))
-            reuseSummary <- rbind(reuseSummary, fileSummary[objNames,,drop=FALSE])
-        reuseObjs <- row.names(reuseSummary)
-        # reuseFileMap <- fileMap[reuseObjs]
     } else {
         filesToRead <- unique(c(names(dbFiles), fileMap))
     }
+    ## Reuse data for objects in the fileMap that are in the summary
+    ## and have objects or files.
+    ## First look at objects in the env
+    objNames <- intersect(names(fileMap), row.names(envSummary))
+    reuseSummary <- envSummary[objNames,,drop=FALSE]
+    objNames <- setdiff(intersect(names(fileMap), row.names(fileSummary)), objNames)
+    if (length(objNames))
+        reuseSummary <- rbind(reuseSummary, fileSummary[objNames,,drop=FALSE])
+    reuseObjs <- row.names(reuseSummary)
+    # reuseFileMap <- fileMap[reuseObjs]
 
     ##
     ## Read each of the files in filesToRead (or its object in the env)
@@ -556,6 +556,11 @@ track.rebuild <- function(pos=1, envir=as.environment(pos), dir=NULL, fix=FALSE,
             i <- match(objName, names(fileMap))
             if (!is.na(i))
                 fileMap <- fileMap[-i]
+            ## Remove the active binding
+            if (!dryRun && activeTracking && exists(objName, envir=envir, inherits=FALSE))
+                rm(list=objName, envir=envir)
+            if (is.element(objName, rownames(reuseSummary)))
+                reuseSummary <- reuseSummary[-match(objName, rownames(reuseSummary)), , drop=FALSE]
         } else {
             if (verbose > 1)
                 cat("Loading file '", abbrevWD(file.path(dataDir, objFile)), "' for ",
@@ -632,7 +637,7 @@ track.rebuild <- function(pos=1, envir=as.environment(pos), dir=NULL, fix=FALSE,
                     newFileMap <- setNamedElt(newFileMap, load.res, objFileBase)
             } else if (fix) {
                 if (!dryRun) {
-                    if (!file.exists(quarantineDir))
+                    if (!dir.exists(quarantineDir))
                         dir.create(quarantineDir)
                     if (!file.rename(file.path(dataDir, objFile), file.path(quarantineDir, objFile)))
                         cat("Unable to move '", objFile, "' to quarantine\n", sep="")
@@ -682,19 +687,19 @@ track.rebuild <- function(pos=1, envir=as.environment(pos), dir=NULL, fix=FALSE,
                 if (is.null(sumRow)) {
                     ## try to rebuild this summary row
                     if (use.file.times)
-                        sumRow <- summaryRow(o, obj=obj, file=file.path(dataDir, objFile), accessed=FALSE)
+                        sumRow <- summaryRow(o, opt=opt, obj=obj, file=file.path(dataDir, objFile), accessed=FALSE)
                     else
-                        sumRow <- summaryRow(o, obj=obj, accessed=FALSE)
+                        sumRow <- summaryRow(o, opt=opt, obj=obj, accessed=FALSE)
                 } else {
                     ## update the summary row (but don't change times)
-                    sumRow <- summaryRow(o, sumRow=sumRow, obj=obj, accessed=FALSE)
+                    sumRow <- summaryRow(o, opt=opt, sumRow=sumRow, obj=obj, accessed=FALSE)
                     sumRowsReused <- sumRowsReused + 1
                 }
                 newSummaryRows <- setNamedElt(newSummaryRows, o, sumRow)
             }
         }
         ## Clean up tmpenv for the next iteration
-        objs <- ls(all=TRUE, envir=tmpenv)
+        objs <- ls(all.names=TRUE, envir=tmpenv)
         if (length(objs))
             remove(list=objs, envir=tmpenv)
     }
@@ -721,7 +726,7 @@ track.rebuild <- function(pos=1, envir=as.environment(pos), dir=NULL, fix=FALSE,
                 sumRow <- chooseBestSummaryRow(objName)
                 ## update or recreate the summary row (sumRow could be NULL)
                 ## we have no file info to get times from
-                sumRow <- summaryRow(objName, sumRow=sumRow, obj=obj)
+                sumRow <- summaryRow(objName, opt=opt, sumRow=sumRow, obj=obj)
                 newSummaryRows[[objName]] <- sumRow
             }
             unsaved <- mget(".trackingUnsaved", envir=trackingEnv, inherits=FALSE, ifnotfound=list(character(0)))[[1]]
@@ -749,7 +754,7 @@ track.rebuild <- function(pos=1, envir=as.environment(pos), dir=NULL, fix=FALSE,
                 "newly constructed entries and uses",  sumRowsReused, "recovered and",
                 (if (is.null(reuseSummary)) 0 else nrow(reuseSummary)),
                 "old entries\n")
-        newSummary <- rbind(reuseSummary, newSummary)
+        newSummary <- rbind(reuseSummary, newSummary[!(rownames(newSummary) %in% rownames(reuseSummary)), , drop=FALSE])
     } else {
         if (verbose>1)
             cat("New summary has zero entries\n")
@@ -762,7 +767,7 @@ track.rebuild <- function(pos=1, envir=as.environment(pos), dir=NULL, fix=FALSE,
     masked <- character(0)
     if (activeTracking) {
         ## Get all the objects in the environment
-        visibleObjs <- ls(envir=envir, all=TRUE)
+        visibleObjs <- ls(envir=envir, all.names=TRUE)
         ## We're only interested in ones with the same names as tracked vars
         visibleObjs <- intersect(visibleObjs, rownames(newSummary))
         missingBindings <- setdiff(rownames(newSummary), visibleObjs)
@@ -779,7 +784,7 @@ track.rebuild <- function(pos=1, envir=as.environment(pos), dir=NULL, fix=FALSE,
                             setTrackedVar(x, v, envir)
                     }, list(x=objName, envir=trackingEnv))
                     mode(f) <- "function"
-                    environment(f) <- emptyenv()
+                    environment(f) <- parent.env(environment(f))
                     makeActiveBinding(objName, env=envir, fun=f)
                 }
             }
@@ -799,7 +804,7 @@ track.rebuild <- function(pos=1, envir=as.environment(pos), dir=NULL, fix=FALSE,
         res$masked <- masked
     if (dryRun) {
         cat("Run with dryRun=FALSE to actually make changes\n")
-        return(res)
+        return(invisible(res))
     } else {
         if (activeTracking) {
             if (verbose>1)

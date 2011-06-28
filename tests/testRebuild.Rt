@@ -30,6 +30,7 @@
 > 
 > # Test (1) rebuild a complete unlinked directory (nothing to do)
 > track:::create.fake.Sys.time(0)
+> options(global.track.options=list(cacheKeepFun='none'))
 > track.start("tmp7", auto=FALSE, cache=FALSE, cachePolicy="none")
 Tracking <env R_GlobalEnv> (writable) using new directory 'tmp7'
 > track(x <- 33)
@@ -67,6 +68,12 @@ Y        list      list   [[2]]      2 2001-01-01 09:00:04 2001-01-01 09:00:04 2
 abc character character     [1]      1 2001-01-01 09:00:09 2001-01-01 09:00:09 2001-01-01 09:00:14 1  1  3  1  0  0
 def      list      list   [[3]]      3 2001-01-01 09:00:10 2001-01-01 09:00:10 2001-01-01 09:00:10 1  1  0  1  0  0
 x     numeric   numeric     [1]      1 2001-01-01 09:00:02 2001-01-01 09:00:02 2001-01-01 09:00:02 1  1  0  1  0  0
+    cache
+X      no
+Y      no
+abc    no
+def    no
+x      no
 > 
 > # Test (2) rebuild a complete active directory (nothing to do)
 > track.start("tmp7", auto=FALSE, cache=FALSE, cachePolicy="none")
@@ -100,6 +107,12 @@ Y        list      list   [[2]]      2 2001-01-01 09:00:04 2001-01-01 09:00:04 2
 abc character character     [1]      1 2001-01-01 09:00:09 2001-01-01 09:00:09 2001-01-01 09:00:14 1  2  0  0  3  1
 def      list      list   [[3]]      3 2001-01-01 09:00:10 2001-01-01 09:00:10 2001-01-01 09:00:10 1  2  0  0  0  1
 x     numeric   numeric     [1]      1 2001-01-01 09:00:02 2001-01-01 09:00:02 2001-01-01 09:00:02 1  2  0  0  0  1
+    cache
+X      no
+Y      no
+abc    no
+def    no
+x      no
 > track.stop(pos=1)
 Stopping tracking on <env R_GlobalEnv>
 > 
@@ -131,6 +144,12 @@ Y        list      list   [[2]]      2 2001-01-01 09:00:04 2001-01-01 09:00:04 2
 abc character character     [1]      1 2001-01-01 09:00:09 2001-01-01 09:00:09 2001-01-01 09:00:14 1  2  0  0  3  1
 def      list      list   [[3]]      3 2001-01-01 09:00:10 2001-01-01 09:00:10 2001-01-01 09:00:10 1  2  0  0  0  1
 x     numeric   numeric     [1]      1 2001-01-01 09:00:02 2001-01-01 09:00:02 2001-01-01 09:00:02 1  2  0  0  0  1
+    cache
+X      no
+Y      no
+abc    no
+def    no
+x      no
 > track.start("tmp7", auto=FALSE, cache=FALSE, cachePolicy="none")
 Tracking <env R_GlobalEnv> (writable) using existing directory 'tmp7'
 > track.summary(time=3, size=FALSE, access=1)
@@ -208,6 +227,13 @@ abc character character     [1]      1 2001-01-01 11:00:03 2001-01-01 11:00:03 2
 def      list      list   [[3]]      3 2001-01-01 11:00:04 2001-01-01 11:00:04 2001-01-01 11:00:04 1  1  0  1  0  0
 x     numeric   numeric     [1]      1 2001-01-01 09:00:02 2001-01-01 09:00:02 2001-01-01 09:00:02 1  3  0  0  0  1
 z     numeric   numeric     [1]      1 2001-01-01 10:00:08 2001-01-01 10:00:08 2001-01-01 10:00:08 1  1  0  1  0  0
+    cache
+X      no
+Y      no
+abc    no
+def    no
+x      no
+z      no
 > track.start("tmp7", auto=FALSE, cache=FALSE, cachePolicy="none")
 Tracking <env R_GlobalEnv> (writable) using existing directory 'tmp7'
 > track.summary(time=3, size=FALSE, access=1)
@@ -307,6 +333,20 @@ x1.1   numeric   numeric     [1]      1 2001-01-01 12:00:07 2001-01-01 12:00:07 
 x2     numeric   numeric     [1]      1 2001-01-01 12:00:09 2001-01-01 12:00:09 2001-01-01 12:00:09 1  1  0  1  0  0
 x3     numeric   numeric     [1]      1 2001-01-01 12:00:10 2001-01-01 12:00:10 2001-01-01 12:00:10 1  1  0  1  0  0
 z      numeric   numeric     [1]      1 2001-01-01 10:00:08 2001-01-01 10:00:08 2001-01-01 10:00:08 1  2  0  0  0  1
+     cache
+X       no
+X4      no
+X5      no
+X6      no
+Y       no
+abc     no
+def     no
+x       no
+x1      no
+x1.1    no
+x2      no
+x3      no
+z       no
 > res <- track.rebuild(dir="tmp7", verbose=2, use.file.times=FALSE, dryRun=FALSE)
 Rebuilding an inactive tracking database
 Guessing RDataSuffix to be 'rda' from name '.trackingSummary.rda'
@@ -365,6 +405,20 @@ x1.1   numeric   numeric     [1]      1 2001-01-01 12:00:19 2001-01-01 12:00:19 
 x2     numeric   numeric     [1]      1 2001-01-01 12:00:21 2001-01-01 12:00:21 2001-01-01 12:00:21 1  1  0  1  0  0
 x3     numeric   numeric     [1]      1 2001-01-01 12:00:22 2001-01-01 12:00:22 2001-01-01 12:00:22 1  1  0  1  0  0
 z      numeric   numeric     [1]      1 2001-01-01 10:00:08 2001-01-01 10:00:08 2001-01-01 10:00:08 1  2  0  0  0  1
+     cache
+X       no
+X4      no
+X5      no
+X6      no
+Y       no
+abc     no
+def     no
+x       no
+x1      no
+x1.1    no
+x2      no
+x3      no
+z       no
 > track.start("tmp7", auto=FALSE, cache=FALSE, cachePolicy="none")
 Tracking <env R_GlobalEnv> (writable) using existing directory 'tmp7'
 > track.summary(time=3, size=FALSE, access=1)
@@ -432,14 +486,14 @@ Saving object summary to file.
     X4     X5     X6     x1   x1.1     x2     x3 
   "_2"   "_1"   "_6"   "x1" "x1.1"   "x2"   "x3" 
 > res$summary[ , -5]
-       class    mode extent length            modified             created            accessed A ES SA SW PA PW
-X4   numeric numeric    [1]      1 2001-01-01 12:00:33 2001-01-01 12:00:33 2001-01-01 12:00:33 1  1  0  1  0  0
-X5   numeric numeric    [1]      1 2001-01-01 12:00:27 2001-01-01 12:00:27 2001-01-01 12:00:27 1  1  0  1  0  0
-X6   numeric numeric    [1]      1 2001-01-01 12:00:28 2001-01-01 12:00:28 2001-01-01 12:00:28 1  1  0  1  0  0
-x1   numeric numeric    [1]      1 2001-01-01 12:00:30 2001-01-01 12:00:30 2001-01-01 12:00:30 1  1  0  1  0  0
-x1.1 numeric numeric    [1]      1 2001-01-01 12:00:29 2001-01-01 12:00:29 2001-01-01 12:00:29 1  1  0  1  0  0
-x2   numeric numeric    [1]      1 2001-01-01 12:00:31 2001-01-01 12:00:31 2001-01-01 12:00:31 1  1  0  1  0  0
-x3   numeric numeric    [1]      1 2001-01-01 12:00:32 2001-01-01 12:00:32 2001-01-01 12:00:32 1  1  0  1  0  0
+       class    mode extent length            modified             created            accessed A ES SA SW PA PW cache
+X4   numeric numeric    [1]      1 2001-01-01 12:00:33 2001-01-01 12:00:33 2001-01-01 12:00:33 1  1  0  1  0  0    no
+X5   numeric numeric    [1]      1 2001-01-01 12:00:27 2001-01-01 12:00:27 2001-01-01 12:00:27 1  1  0  1  0  0    no
+X6   numeric numeric    [1]      1 2001-01-01 12:00:28 2001-01-01 12:00:28 2001-01-01 12:00:28 1  1  0  1  0  0    no
+x1   numeric numeric    [1]      1 2001-01-01 12:00:30 2001-01-01 12:00:30 2001-01-01 12:00:30 1  1  0  1  0  0    no
+x1.1 numeric numeric    [1]      1 2001-01-01 12:00:29 2001-01-01 12:00:29 2001-01-01 12:00:29 1  1  0  1  0  0    no
+x2   numeric numeric    [1]      1 2001-01-01 12:00:31 2001-01-01 12:00:31 2001-01-01 12:00:31 1  1  0  1  0  0    no
+x3   numeric numeric    [1]      1 2001-01-01 12:00:32 2001-01-01 12:00:32 2001-01-01 12:00:32 1  1  0  1  0  0    no
 > track.start("tmp7", auto=FALSE, cache=FALSE, cachePolicy="none")
 Tracking <env R_GlobalEnv> (writable) using existing directory 'tmp7'
 > track.summary(time=3, size=FALSE, access=1)
@@ -572,6 +626,22 @@ x1     numeric   numeric     [1]      1 2001-01-01 12:00:30 2001-01-01 12:00:30 
 x1.1   numeric   numeric     [1]      1 2001-01-01 12:00:29 2001-01-01 12:00:29 2001-01-01 12:00:29 1  3  0  0  0  1
 x2     numeric   numeric     [1]      1 2001-01-01 12:00:31 2001-01-01 12:00:31 2001-01-01 12:00:31 1  3  0  0  0  1
 x3     numeric   numeric     [1]      1 2001-01-01 12:00:32 2001-01-01 12:00:32 2001-01-01 12:00:32 1  3  0  0  0  1
+     cache
+X       no
+X4      no
+X5      no
+X6      no
+Y       no
+aa      no
+abc     no
+bb      no
+cc      no
+def     no
+x       no
+x1      no
+x1.1    no
+x2      no
+x3      no
 > res <- track.rebuild(verbose=2, fix=TRUE, dryRun=FALSE, use.file.times=FALSE)
 Rebuilding an active tracking database
 Guessing RDataSuffix to be 'rda' from name '.trackingSummary.rda'
@@ -721,6 +791,123 @@ x1     tracked FALSE       x1       TRUE  TRUE
 x1.1   tracked FALSE     x1.1       TRUE  TRUE
 x2     tracked FALSE       x2       TRUE  TRUE
 x3     tracked FALSE       x3       TRUE  TRUE
+> 
+> track.stop()
+Stopping tracking on <env R_GlobalEnv>
+> unlink("tmp7", recursive=TRUE)
+> rm(list=ls(all=TRUE))
+> 
+> #############
+> # Badly damage a tracking db: two missing files, and two objects missing from the filemap
+> # First time, start tracking with discardMissing=TRUE and check that works
+> track.start("tmp7", auto=FALSE, cache=FALSE, cachePolicy="none")
+Tracking <env R_GlobalEnv> (writable) using new directory 'tmp7'
+> track(aa <- 1)
+> track(bb <- 2)
+> track(cc <- 3)
+> track(dd <- 4)
+> track(ee <- 5)
+> track.stop()
+Stopping tracking on <env R_GlobalEnv>
+> unlink('tmp7/aa.rda')
+> unlink('tmp7/bb.rda')
+> x <- readLines('tmp7/filemap.txt')[1:3]
+> writeLines(x, con='tmp7/filemap.txt')
+> rm(x)
+> track.start("tmp7", auto=FALSE, cache=FALSE, cachePolicy="none", discardMissing=TRUE)
+Tracking <env R_GlobalEnv> (writable) using existing directory 'tmp7'
+Discarding info about objects with missing save files: aa, bb
+> cc
+[1] 3
+> list.files('tmp7')
+[1] "cc.rda"      "dd.rda"      "ee.rda"      "filemap.txt"
+> 
+> track.stop()
+Stopping tracking on <env R_GlobalEnv>
+> unlink("tmp7", recursive=TRUE)
+> 
+> #############
+> # Second time, start tracking with discardMissing=FALSE and check that track.rebuild() works
+> track.start("tmp7", auto=FALSE, cache=FALSE, cachePolicy="none")
+Tracking <env R_GlobalEnv> (writable) using new directory 'tmp7'
+> track(aa <- 1)
+> track(bb <- 2)
+> track(cc <- 3)
+> track(dd <- 4)
+> track(ee <- 5)
+> track.stop()
+Stopping tracking on <env R_GlobalEnv>
+> unlink('tmp7/aa.rda')
+> unlink('tmp7/bb.rda')
+> x <- readLines('tmp7/filemap.txt')[1:3]
+> writeLines(x, con='tmp7/filemap.txt')
+> rm(x)
+> track.start("tmp7", auto=FALSE, cache=FALSE, cachePolicy="none")
+Tracking <env R_GlobalEnv> (writable) using existing directory 'tmp7'
+Warning message:
+In track.start("tmp7", auto = FALSE, cache = FALSE, cachePolicy = "none") :
+  missing files for some variables in the fileMap (supply discardMissing=TRUE or remove or assign variables to repair): aa, bb
+> 
+> track.rebuild()
+dryRun=TRUE: no changes will be actually be made
+Rebuilding an active tracking database
+Guessing RDataSuffix to be 'rda' from name '.trackingSummary.rda'
+Found a fileMap in the environment and on disk
+Using tracking summary from tracking environment.
+Using tracking summary read from file.
+Cannot find some objects in the fileMap: no file on disk, and object is not in the tracking environment:
+   filename
+aa   aa.rda
+bb   bb.rda
+Error in track.rebuild() : 
+  can only proceed with level='all' -- and in that case the meta info for these lost objects will be lost
+> track.rebuild(level='all')
+dryRun=TRUE: no changes will be actually be made
+Rebuilding an active tracking database
+Guessing RDataSuffix to be 'rda' from name '.trackingSummary.rda'
+Found a fileMap in the environment and on disk
+Using tracking summary from tracking environment.
+Using tracking summary read from file.
+Cannot find some objects in the fileMap: no file on disk, and object is not in the tracking environment:
+   filename
+aa   aa.rda
+bb   bb.rda
+loaded 'cc'
+loaded 'dd'
+loaded 'ee'
+Object 'aa' is not stored on file ('./tmp7/aa.rda') and is not cached -- forgetting about it
+Object 'bb' is not stored on file ('./tmp7/bb.rda') and is not cached -- forgetting about it
+Would rebuild 2 missing active bindings: dd, ee
+Run with dryRun=FALSE to actually make changes
+> track.rebuild(level='all', dryRun=FALSE)
+Rebuilding an active tracking database
+Guessing RDataSuffix to be 'rda' from name '.trackingSummary.rda'
+Found a fileMap in the environment and on disk
+Using tracking summary from tracking environment.
+Using tracking summary read from file.
+Cannot find some objects in the fileMap: no file on disk, and object is not in the tracking environment:
+   filename
+aa   aa.rda
+bb   bb.rda
+loaded 'cc'
+loaded 'dd'
+loaded 'ee'
+Object 'aa' is not stored on file ('./tmp7/aa.rda') and is not cached -- forgetting about it
+Object 'bb' is not stored on file ('./tmp7/bb.rda') and is not cached -- forgetting about it
+Rebuilding 2 missing active bindings: dd, ee
+> ls()
+[1] "cc" "dd" "ee"
+> track.status()
+    Status InMem FileBase FileExists Saved
+cc tracked FALSE       cc       TRUE  TRUE
+dd tracked FALSE       dd       TRUE  TRUE
+ee tracked FALSE       ee       TRUE  TRUE
+> cc
+[1] 3
+> dd
+[1] 4
+> ee
+[1] 5
 > 
 > track.stop()
 Stopping tracking on <env R_GlobalEnv>

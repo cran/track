@@ -1,5 +1,6 @@
 track.start <- function(dir="rdatadir", pos=1, envir=as.environment(pos),
                         create=TRUE, clobber=c("no", "files", "variables", "vars", "var"),
+                        discardMissing=FALSE,
                         cache=NULL, cachePolicy=NULL,
                         options=NULL, RDataSuffix=NULL, auto=NULL,
                         readonly=FALSE, lockEnv=FALSE, check.Last=TRUE,
@@ -25,13 +26,13 @@ track.start <- function(dir="rdatadir", pos=1, envir=as.environment(pos),
     track.stop.finalizer <- function(trackingEnv) {
         ## Finalizer is difficult because it can be called long
         ## after a tracking environment has been disconnected.
-        ## Had the checks in here because I thought I was seeing some
-        ## problems with invalid calls to the finalizer, but they all
-        ## turned out to be calling the finalizer on the object long
-        ## after it had stopped being used.
+        ## Had the following disabled checks in here because I thought I was
+        ## seeing some problems with invalid calls to the finalizer, but they
+        ## all turned out to be a result of the finalizer on the object being
+        ## called long after it had stopped being used.
         if (exists(".trackingFinished", envir=trackingEnv, inherits=FALSE))
             return(NULL)
-        if (!exists(".trackingEnv", env=envir, inherits=FALSE)) {
+        if (!exists(".trackingEnv", envir=envir, inherits=FALSE)) {
             ## This used to happen under some circumstances when the finalizer is
             ## called after tracking has stopped, but the check for ".trackingFinished"
             ## fixed that.
@@ -40,14 +41,14 @@ track.start <- function(dir="rdatadir", pos=1, envir=as.environment(pos),
                     ": no .trackingEnv in", envname(envir), "\n")
             return(NULL)
         }
-        if (!identical(trackingEnv, get(".trackingEnv", env=envir, inherits=FALSE))) {
+        if (!identical(trackingEnv, get(".trackingEnv", envir=envir, inherits=FALSE))) {
             ## This can happen in cases where a tracking env is partially
             ## set up and then discarded, as when there are variable name
             ## conflicts
             if (FALSE)
                 cat("Bogus call to track.stop reg.finalizer for", envname(trackingEnv),
                     ": .trackingEnv in", envname(envir), "is different:",
-                    envname(get(".trackingEnv", env=envir, inherits=FALSE)), "\n")
+                    envname(get(".trackingEnv", envir=envir, inherits=FALSE)), "\n")
             return(NULL)
         }
         ## cat("Valid call to track.stop reg.finalizer for", envname(trackingEnv),
@@ -55,7 +56,7 @@ track.start <- function(dir="rdatadir", pos=1, envir=as.environment(pos),
         ## if (interactive()) browser()
         ## Seems to sometimes be called when not appropriate, so don't
         ## do anything drastic -- just flush.
-        ## Example is the track.load() commands in track.status.Rd
+        ## Example is the track.load() commands in the examples in track.status.Rd
         track.flush(envir=envir)
     }
     if (!readonly) {
@@ -92,7 +93,7 @@ track.start <- function(dir="rdatadir", pos=1, envir=as.environment(pos),
         else
             auto <- TRUE
     optionsPath <- NULL
-    if (file.exists(file.path(dataDir))) {
+    if (dir.exists(file.path(dataDir))) {
         ## Try to work out the suffix being used
         ## First look for .trackingOptions file
         suffix <- NULL
@@ -178,8 +179,8 @@ track.start <- function(dir="rdatadir", pos=1, envir=as.environment(pos),
         }
     }
     if (length(old.options)==0) {
-        # Couldn't read any options from the file, initialize them
-        # from remaining gopt.
+        ## Couldn't read any options from the file, initialize them
+        ## from remaining gopt.
         gopt$autoTrack <- NULL
         gopt$RDataSuffixes <- NULL
         old.options <- gopt
@@ -189,21 +190,21 @@ track.start <- function(dir="rdatadir", pos=1, envir=as.environment(pos),
         opt$readonly <- readonly
     assign(".trackingOptions", opt, envir=trackingEnv)
     fileMapPath <- file.path(dataDir, "filemap.txt")
-    fileMapCreated <- FALSE
+    fileMapChanged <- FALSE
     objSummaryPath <- file.path(dataDir, paste(".trackingSummary.", opt$RDataSuffix, sep=""))
     ## Create a default empty objSummary -- an existing one will replace this
-    objSummary <- summaryRow(name="")[0,]
-    if (!file.exists(file.path(dataDir))) {
+    objSummary <- summaryRow(name="", opt=opt)[0,]
+    if (!dir.exists(file.path(dataDir))) {
         if (!create)
             stop("dir \"", dataDir, "\" does not exist (supply create=TRUE to create it)")
         res <- dir.create(file.path(dataDir), recursive=TRUE)
         if (is(res, "try-error"))
             stop("could not creating tracking dir '", dataDir, "': ", res)
-        if (!file.exists(dataDir))
+        if (!dir.exists(dataDir))
             stop("failed to create tracking dir '", dataDir, "'")
         fileMap <- character(0)
         assign(".trackingFileMap", fileMap, envir=trackingEnv)
-        fileMapCreated <- TRUE
+        fileMapChanged <- TRUE
         assign(".trackingSummary", objSummary, envir=trackingEnv)
     } else {
         ## Try to read the summary first, because if there is a problem with fileMap,
@@ -218,7 +219,7 @@ track.start <- function(dir="rdatadir", pos=1, envir=as.environment(pos),
             if (length(load.res)!=1 || load.res != ".trackingSummary")
                 stop(objSummaryPath, " does not contain just '.trackingSummary' -- for recovery see ?track.rebuild")
             ## .trackingSummary has to exist because we just loaded it
-            objSummary <- get(".trackingSummary", envir=tmpenv, inherits=FALSE)
+            objSummary <- getObjSummary(tmpenv, opt=opt)
             if (!is.data.frame(objSummary))
                 stop("'.trackingSummary' from ", objSummaryPath, " is not a data.frame -- see ?track.rebuild")
             assign(".trackingSummary", objSummary, envir=trackingEnv)
@@ -229,9 +230,20 @@ track.start <- function(dir="rdatadir", pos=1, envir=as.environment(pos),
             fileMap <- readFileMapFile(trackingEnv, dataDir, TRUE)
             if (length(fileMap)) {
                 fileExists <- file.exists(file.path(dataDir, paste(fileMap, sep=".", opt$RDataSuffix)))
-                if (any(!fileExists))
-                    warning("missing files for some variables in the fileMap (remove or assign variables to repair): ",
-                         paste(names(fileMap)[!fileExists], collapse=", "))
+                if (any(!fileExists)) {
+                    if (discardMissing) {
+                        if (verbose)
+                            cat('Discarding info about objects with missing save files: ',
+                                 paste(names(fileMap)[!fileExists], collapse=", "), "\n", sep="")
+                        if (any(names(fileMap)[!fileExists] %in% rownames(objSummary)))
+                            objSummary <- objSummary[(rownames(objSummary) %in% names(fileMap)[fileExists]), , drop=FALSE]
+                        fileMap <- fileMap[fileExists]
+                        fileMapChanged <- TRUE
+                    } else {
+                        warning("missing files for some variables in the fileMap (supply discardMissing=TRUE or remove or assign variables to repair): ",
+                                paste(names(fileMap)[!fileExists], collapse=", "))
+                    }
+                }
             }
             alreadyExists <- logical(0)
             if (length(fileMap))
@@ -284,7 +296,7 @@ track.start <- function(dir="rdatadir", pos=1, envir=as.environment(pos),
             if (length(files)==0) {
                 ## No files: start with a new fileMap and objSummary
                 fileMap <- character(0)
-                fileMapCreated <- TRUE
+                fileMapChanged <- TRUE
                 assign(".trackingFileMap", fileMap, envir=trackingEnv)
             } else {
                 stop("tracking dir \"", dir, "\" has some data files in it, but has no filemap.txt file -- use track.rebuild() to fix it")
@@ -300,47 +312,44 @@ track.start <- function(dir="rdatadir", pos=1, envir=as.environment(pos),
         }
     }
     ## Do we need to save the fileMap ? (only if changed)
-    if (fileMapCreated && !opt$readonly)
+    if (fileMapChanged && !opt$readonly)
         writeFileMapFile(fileMap, trackingEnv, dataDir, TRUE)
     ## We always need to save the summary...
     assign(".trackingSummary", objSummary, envir=trackingEnv)
     assign(".trackingSummaryChanged", TRUE, envir=trackingEnv)
-    if (!opt$readonly) {
-        save.res <- try(save(list=".trackingSummary", envir=trackingEnv, file=objSummaryPath, compress=FALSE), silent=TRUE)
-        if (is(save.res, "try-error"))
-            stop("could not save '.trackingSummary' in ", objSummaryPath, ": fix file problem and try again")
-    }
-    assign(".trackingSummaryChanged", FALSE, envir=trackingEnv)
-    if (dir!=dataDir && !file.exists(dfn)) {
+    if (dir!=dataDir) {
         ## Only use a "DESCRIPTION" file when we use a 'data' subdirectory
         ## in the tracking dir.
         dfn <- file.path(dir, "DESCRIPTION")
-        write.res <- try(cat(track.package.desc(basename(dir)), "\n", sep="\n", file=dfn), silent=TRUE)
-        if (is(write.res, "try-error"))
-            warning("had problem writing ", dfn, " (", as.character(write.res), ")")
+        if (!file.exists(dfn)) {
+            write.res <- try(cat(track.package.desc(basename(dir)), "\n", sep="\n", file=dfn), silent=TRUE)
+            if (is(write.res, "try-error"))
+                warning("had problem writing ", dfn, " (", as.character(write.res), ")")
+        }
     }
-    ## load bindings for the vars already in the tracking dir
-    for (objname in names(fileMap)) {
+    ## create bindings for the vars already in the tracking dir
+    for (objName in names(fileMap)) {
         f <- substitute(function(v) {
             if (missing(v))
                 getTrackedVar(x, envir)
             else
                 setTrackedVar(x, v, envir)
-        }, list(x=objname, envir=trackingEnv))
+        }, list(x=objName, envir=trackingEnv))
         mode(f) <- "function"
         environment(f) <- parent.env(environment(f))
-        makeActiveBinding(objname, env=envir, fun=f)
+        makeActiveBinding(objName, env=envir, fun=f)
     }
     setTrackingEnv(trackedEnv=envir, trackingEnv=trackingEnv)
     if (auto) {
-        callbackName <- paste("track.auto:", envname(envir), sep="")
+        callbackName <- "track.auto"
         ## remove the old callback (to avoid having duplicates)
         while (is.element(callbackName, getTaskCallbackNames()))
             removeTaskCallback(callbackName)
         addTaskCallback(track.sync.callback, data=envir, name=callbackName)
         assign(".trackAuto", list(on=TRUE, last=-1), envir=trackingEnv)
     }
-    if (check.Last) {
+    if (FALSE && check.Last) {
+        ## Stopped using .Last.sys because it was only called when in the globalenv
         if (length(i <- find(".Last.sys")) > 1)
             if (i[1] != find("track.start")[1])
                 warning("There are more than one .Last.sys() functions on the search path -- the one from track will is masked and will not run.  This may affect the saving of tracked environments.\n")
@@ -348,28 +357,50 @@ track.start <- function(dir="rdatadir", pos=1, envir=as.environment(pos),
                 warning("There are more than one .Last.sys() functions on the search path -- the one from track masks others and they will not run\n")
     }
     ## Note that locking the environment is irreversible, and it prevents
-    ## rescaning (because the main reason to do that would be to pick up
-    ## new variables and delete old ones).  Locking doesn't however prevent
-    ## caching, because caching uses the tracking env, not the tracked env,
-    ## and the tracking env is not locked.
+    ## rescaning in-place (because the main reason to do that would be to
+    ## pick up new variables and delete old ones).  Locking doesn't however
+    ## prevent caching, because caching uses the tracking env, not the
+    ## tracked env, and the tracking env is not locked.
     if (lockEnv && opt$readonly && environmentName(envir) != "R_GlobalEnv")
         lockEnvironment(envir)
+    ## Set up .Last to be track.last(), which will make sure that all
+    ## tracked envs are sync'd to disk when R quits.
+    ## This is a good candidate for a different way of doing things, either
+    ## a 'Last' hook (doesn't exist in R, but would be nice if it did,
+    ## or something like a finalizer on an object, though I wasn't able
+    ## to get that to work reliably -- it wasn't always called when R
+    ## quitting R.
     .Last <- track.Last
     environment(.Last) <- globalenv()
     existing.Last <- NULL
+    ## Fetching an existing .Last here has the side effect that it will be
+    ## cached (because .Last is a default member of track.options('alwaysCache'))
+    ## Thus, in the case tracking db becomes unavailable, the R-termination
+    ## will not be affected by not being able read .Last from disk.
     if (exists(".Last", where=1, inherits=FALSE)) {
         existing.Last <- get(".Last", pos=1, inherits=FALSE)
         environment(existing.Last) <- globalenv()
     }
-    if (!is.null(existing.Last) && !identical(.Last, existing.Last)) {
-        warning(".Last already exists in globalenv -- not installing track.Last, user must call track.stop(all=TRUE) before ending R session")
+    if (!is.null(existing.Last)) {
+        if (!identical(.Last, existing.Last))
+            warning(".Last already exists in globalenv -- not installing track.Last, user must call track.stop(all=TRUE) before ending R session")
     } else {
         assign(".Last", .Last, pos=1)
+        ## Do the same thing as in track.sync.callback() for the globalenv
+        if (env.is.tracked(pos=1))
+            try(track.sync(pos=1, master="envir", taskEnd=TRUE))
     }
+    ## Save the tracking summary after working with .Last
+    if (!opt$readonly) {
+        save.res <- try(save(list=".trackingSummary", envir=trackingEnv, file=objSummaryPath, compress=FALSE), silent=TRUE)
+        if (is(save.res, "try-error"))
+            stop("could not save '.trackingSummary' in ", objSummaryPath, ": fix file problem and try again")
+    }
+    assign(".trackingSummaryChanged", FALSE, envir=trackingEnv)
     ## Store the Pid of this R session so that we can identify
-    ## situations where are dead .trackEnv has been loaded
-    ## in by mistake (probably as a result of saving and
-    ## reloading an entire environment.)
+    ## situations where a dead .trackEnv has been loaded in by
+    ## mistake (probably as a result of saving and reloading an
+    ## entire tracked environment.)
     assign(".trackingPid", Sys.getpid(), envir=trackingEnv)
     if (!is.element("track.auto.monitor", getTaskCallbackNames()))
         addTaskCallback(track.auto.monitor, name="track.auto.monitor")
