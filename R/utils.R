@@ -583,6 +583,7 @@ getTrackedVar <- function(objName, trackingEnv, opt=track.options(trackingEnv=tr
 
 if (FALSE) {
 create.fake.Sys.time2 <- function() {
+    ## Old version
     ## The Sys.time() function created by this function doesn't get
     ## called by functions in a different environment.
     ## Create a fake Sys.time() function that just counts 1 second forward
@@ -597,9 +598,10 @@ create.fake.Sys.time2 <- function() {
     }
     invisible(NULL)
 }
-}
 
 create.fake.Sys.time <- function(offset) {
+    ## New version, but don't define it here, because quality control
+    ## warns the user about use of unlockBinding.
     ## Create a fake Sys.time() function that just counts 1 second forward
     ## from a fixed starting time each time it is called.
     if (!exists("Sys.time.counter", envir=baseenv(), inherits=FALSE)) {
@@ -616,6 +618,9 @@ create.fake.Sys.time <- function(offset) {
     assign("Sys.time.counter", as.POSIXct("2001/01/01 09:00:00", tz="GMT")+offset, envir=baseenv())
     invisible(NULL)
 }
+}
+
+create.fake.Sys.time <- function(offset) stop("Eek!  I'm not properly defined yet!")
 
 find.relative.path <- function(path, file) {
     ## Find a way to express file as a relative path to path

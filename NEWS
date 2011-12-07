@@ -1,3 +1,7 @@
+                CHANGES in track version 1.0-12 (2011-12-07)
+FIXES
+    o   Move 
+
                 CHANGES in track version 1.0-11 (2011-10-18)
 FIXES
     o   Better detection of directories under windows() --
