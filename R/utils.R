@@ -111,7 +111,10 @@ tracked.envs <- function(envirs=search()) {
 
 # Create or update a row for the summary data frame
 summaryRow <- function(name, opt, sumRow=NULL, obj=NULL, file=NULL, change=FALSE, times=NULL, accessed=TRUE) {
-    tt <- Sys.time()
+    if (opt$use.fake.Sys.time)
+        tt <- fake.Sys.time()
+    else
+        tt <- Sys.time()
     new <- FALSE
     if (is.null(sumRow)) {
         new <- TRUE
@@ -582,10 +585,10 @@ getTrackedVar <- function(objName, trackingEnv, opt=track.options(trackingEnv=tr
 }
 
 if (FALSE) {
-create.fake.Sys.time2 <- function() {
-    ## Old version
+create.fake.Sys.time <- function() {
     ## The Sys.time() function created by this function doesn't get
-    ## called by functions in a different environment.
+    ## called by functions in a different environment, so it doesn't
+    ## work properly with scriptests when running in the interpreter.
     ## Create a fake Sys.time() function that just counts 1 second forward
     ## from a fixed starting time each time it is called.
     if (!is.element("fake.Sys.time", search())) {
@@ -598,29 +601,7 @@ create.fake.Sys.time2 <- function() {
     }
     invisible(NULL)
 }
-
-create.fake.Sys.time <- function(offset) {
-    ## New version, but don't define it here, because quality control
-    ## warns the user about use of unlockBinding.
-    ## Create a fake Sys.time() function that just counts 1 second forward
-    ## from a fixed starting time each time it is called.
-    if (!exists("Sys.time.counter", envir=baseenv(), inherits=FALSE)) {
-        ## Assign a new Sys.time() function in the base environment.
-        unlockBinding("Sys.time", baseenv())
-        if (!exists("Sys.time.orig", envir=baseenv(), inherits=FALSE))
-            assign("Sys.time.orig", get("Sys.time", envir=baseenv()), envir=baseenv())
-        assign("Sys.time", function() {
-            Sys.time.counter <- get("Sys.time.counter", envir=baseenv()) + 1
-            assign("Sys.time.counter", Sys.time.counter, envir=baseenv())
-            return(Sys.time.counter)
-        }, envir=baseenv())
-    }
-    assign("Sys.time.counter", as.POSIXct("2001/01/01 09:00:00", tz="GMT")+offset, envir=baseenv())
-    invisible(NULL)
 }
-}
-
-create.fake.Sys.time <- function(offset) stop("Eek!  I'm not properly defined yet!")
 
 find.relative.path <- function(path, file) {
     ## Find a way to express file as a relative path to path
@@ -672,37 +653,27 @@ exclude.from.tracking <- function(objName, objClasses=NULL, opt) {
 
 dir.exists <- function(dir) {
     ## Need this because sometimes directories on network drives
-    ## under windows aren't seen by file.exists().  (Even if
-    ## they have files in them.  But the tests for existence for
-    ## the files in them work fine.)
+    ## under windows aren't seen by file.exists().  This can be
+    ## true even if they have files in them.  In such cases the
+    ## tests for existence for the files in them seem to work fine.
+    ## However, file.access() seems more reliable, so try both.
     file.exists(dir) || (file.access(dir, mode=0)==0)
 }
 
-if (FALSE) {
-    ## Code in here was an alternate, worse way to override Sys.time() for testing purposes
-    ## (worse because it introduced permanent overhead for Sys.time(), even in normal operation)
-call.Sys.time <- function() Sys.time()
+## Code in here was an alternate, worse way to override Sys.time() for testing purposes
+## (worse because it introduced permanent overhead for Sys.time(), even in normal operation)
 
-Sys.time <- function() {
-    if (!is.element("Sys.time.control", search()))
-        create.fake.Sys.time(FALSE)
-    if (get("use.fake.Sys.time", pos="Sys.time.control")) {
-        Sys.time.counter <- get("Sys.time.counter", pos="Sys.time.control")
-        assign("Sys.time.counter", Sys.time.counter + 1, pos="Sys.time.control")
-        return(Sys.time.counter)
-    } else {
-        return(base::Sys.time())
-    }
+fake.Sys.time <- function() {
+    if (!is.element("fake.Sys.time.control", search()))
+        set.fake.Sys.time(1)
+    fake.Sys.time.counter <- get("fake.Sys.time.counter", pos="fake.Sys.time.control")
+    assign("fake.Sys.time.counter", fake.Sys.time.counter + 1, pos="fake.Sys.time.control")
+    return(fake.Sys.time.counter)
 }
 
-toggle.fake.Sys.time <- function()
-    return(invisible(use.fake.Sys.time <<- !use.fake.Sys.time))
-
-create.fake.Sys.time <- function(use.fake=TRUE, offset=0) {
-    if (!is.element("Sys.time.control", search()))
-        attach(what=new.env(), name="Sys.time.control")
-    assign("Sys.time.counter", as.POSIXct("2001/01/01 09:00:00", tz="GMT")+offset, pos="Sys.time.control")
-    assign("use.fake.Sys.time", use.fake, pos="Sys.time.control")
-    return(invisible(use.fake))
-}
+set.fake.Sys.time <- function(offset=1) {
+    if (!is.element("fake.Sys.time.control", search()))
+        attach(what=new.env(), name="fake.Sys.time.control")
+    assign("fake.Sys.time.counter", as.POSIXct("2001/01/01 09:00:00", tz="GMT")+offset, pos="fake.Sys.time.control")
+    return(invisible(get("fake.Sys.time.counter", pos="fake.Sys.time.control")))
 }
