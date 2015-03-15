@@ -1,6 +1,6 @@
-5c18f3594489a4364c0a071e5d032af6 *DESCRIPTION
+076f370ed2f76103ab76294ac8384563 *DESCRIPTION
 8b4b71f74b59cd4927adcc1ed7f45e16 *NAMESPACE
-0e433917550cab57d42c2e1ba865bd0e *NEWS
+479272487e7096ea12de8529b7d6f511 *NEWS
 6a2c5fcf980dc1e8e2ce5a83b54ecbf8 *R/createRfromRt.R
 9b46b93557dd9f4c65fb15301de7c0b0 *R/file.utils.R
 b313deffab8caed299f1a7b4c4fbcc99 *R/show.envs.R
@@ -71,7 +71,7 @@ eba147ea8273f34f4d2704a3e1eae7e4 *man/track.summary.Rd
 84c97b8d870b25ba67607daabcd7d53a *tests/CONFIG
 55c7528184fa1e69fae34fa56c9806e0 *tests/README.txt
 6c4ee397cc76ab72f3b31934a59f7382 *tests/checkUsage.Rt
-018568a1b3cda220132564fc88ea6ae3 *tests/runtests.R
+204b0caf1bed4e1ee759940a1625aa21 *tests/runtests.R
 dd66e0c3f52c088499494bea4727f03a *tests/show.envs.Rt
 c858f7617d384c460647258a04407b6c *tests/testBrokenFileSystem.Rt
 af66492b25d90055a2f837c717191590 *tests/testCachePlugin.Rt
@@ -92,10 +92,10 @@ c825153e47ae2a67b0c392904b5b94e1 *tests/testWindowsFileNames.Rt
 77a8e87872bd7b2c0a855679049f3c5d *tests/track.Rt
 1b5c10abbb08e3dd45e405b0cfcdb392 *tests/track.assign.Rt
 01f1651776b27f34f2c1e4e97e451dd8 *tests/track.attach.Rt
-5299e502a51899279e273145a03b8898 *tests/track.auto.rescan.Rt
+f4aac73c752e820d7db079451220ada3 *tests/track.auto.rescan.Rt
 dd96627f75957535a5fe0f8e614e4a0b *tests/track.copy.Rt
 1197967475df143459cf95c733a8dfaa *tests/track.rename.Rt
 5ea4ad409b31c5133153846a47501338 *tests/track.rescan.Rt
 40dca3b2b83d3ba05223c3dbb9d3d3c0 *tests/track.start.Rt
 80014263c0389abf39089dfb9a29be3b *tests/track.sync.Rt
-6b985dc66ab267cb538ae06083c2ca86 *vignettes/track.Rnw
+62604cc284cd2d7a1ed2a551a7480a94 *vignettes/track.Rnw
