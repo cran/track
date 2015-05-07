@@ -117,7 +117,8 @@ trackedVarOp <- function(qexpr, pos=1, envir=as.environment(pos), list=NULL, pat
                 remove(list=objName, envir=envir)
             }
         } else if (is.element(op, c("untrack", "lift"))) {
-            ## fetch the value and assign it in envir
+            ## Fetch the value and assign it in envir
+            ## Don't run any load callback on the object
             if (exists(objName, envir=trackingEnv, inherits=FALSE)) {
                 objVal <- get(objName, envir=trackingEnv, inherits=FALSE)
             } else {
@@ -150,6 +151,8 @@ trackedVarOp <- function(qexpr, pos=1, envir=as.environment(pos), list=NULL, pat
         if (is.element(op, c("remove", "untrack"))) {
             fileMap <- fileMap[-fileMapPos]
             fileMapChanged <- TRUE
+            if (opt$debug >= 2)
+                cat('trackedVarOp:', op, 'removing', paste(objName, collapse=', '), 'from trackingEnv\n')
             if (exists(objName, envir=trackingEnv, inherits=FALSE))
                 remove(list=objName, envir=trackingEnv)
             if (file.exists(filePath)) {
@@ -171,8 +174,11 @@ trackedVarOp <- function(qexpr, pos=1, envir=as.environment(pos), list=NULL, pat
                     stop("could not save '", objName, "' in ", filePath, ": fix file problem and try again")
             }
             if (is.element(op, c("flush", "forget", "lift")) && exists(objName, envir=trackingEnv, inherits=FALSE)
-                && (force || !(op=="flush" && is.element(objName, opt$alwaysCache))))
+                && (force || !(op=="flush" && is.element(objName, opt$alwaysCache)))) {
+                if (opt$debug >= 2)
+                    cat('trackedVarOp:', op, 'removing', paste(objName, collapse=', '), 'from trackingEnv\n')
                 remove(list=objName, envir=trackingEnv)
+            }
         } else {
             stop("what ", op, "???")
         }
@@ -196,14 +202,12 @@ trackedVarOp <- function(qexpr, pos=1, envir=as.environment(pos), list=NULL, pat
         writeFileMapFile(fileMap, trackingEnv, dataDir, FALSE)
     if ((needSaveObjSummary || resave) && !opt$readonly) {
         assign(".trackingSummaryChanged", TRUE, envir=trackingEnv)
-        save.res <- try(save(list=".trackingSummary", envir=trackingEnv,
-                              file=file.path(dataDir, paste(".trackingSummary", opt$RDataSuffix, sep=".")),
-                              compress=FALSE), silent=TRUE)
+        save.res <- saveObjSummary(trackingEnv, opt, dataDir)
         if (!is(save.res, "try-error"))
             assign(".trackingSummaryChanged", FALSE, envir=trackingEnv)
     }
     if (is(save.res, "try-error")) {
-        stop("unable to save .trackingSummary in ", file.path(dataDir), ": fix problem and run track.resave()")
+        warning("unable to save .trackingSummary in ", file.path(dataDir), ": if this message appears repeatedly, fix problem and run track.resave()")
     }
     return(invisible(list))
 }

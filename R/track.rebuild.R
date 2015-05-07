@@ -436,7 +436,7 @@ track.rebuild <- function(pos=1, envir=as.environment(pos), dir=NULL, fix=FALSE,
                 formatMsg(load.res), ")\n")
         } else if(!is.element(".trackingSummary", load.res)) {
             cat("Strange: '", abbrevWD(file.path(dataDir, paste(".trackingSummary", opt$RDataSuffix, sep="."))),
-                " does not containg a '.trackingSummary' object -- rebuilding...\n")
+                " does not contain a '.trackingSummary' object -- rebuilding it ...\n")
         } else {
             fileSummary <- getObjSummary(tmpenv, opt=opt)
             if (!is.data.frame(fileSummary)) {
@@ -635,9 +635,10 @@ track.rebuild <- function(pos=1, envir=as.environment(pos), dir=NULL, fix=FALSE,
             if (ok) {
                 objEnv <- tmpenv
                 objNames <- load.res
-                # Add to the new filemap if it wasn't in the old filemap
+                ## Add to the new filemap if it wasn't in the old filemap
                 if (is.na(objName))
                     newFileMap <- setNamedElt(newFileMap, load.res, objFileBase)
+                ## Call the load callback for this object
             } else if (fix) {
                 if (!dryRun) {
                     if (!dir.exists(quarantineDir))
@@ -780,14 +781,7 @@ track.rebuild <- function(pos=1, envir=as.environment(pos), dir=NULL, fix=FALSE,
                 paste(missingBindings, collapse=", "), "\n", sep="")
             if (!dryRun) {
                 for (objName in missingBindings) {
-                    f <- substitute(function(v) {
-                        if (missing(v))
-                            getTrackedVar(x, envir)
-                        else
-                            setTrackedVar(x, v, envir)
-                    }, list(x=objName, envir=trackingEnv))
-                    mode(f) <- "function"
-                    environment(f) <- parent.env(environment(f))
+                    f <- createBindingClosure(objName, trackingEnv)
                     makeActiveBinding(objName, env=envir, fun=f)
                 }
             }
@@ -829,11 +823,12 @@ track.rebuild <- function(pos=1, envir=as.environment(pos), dir=NULL, fix=FALSE,
         if (verbose>1)
             cat("Saving object summary to file.\n")
         if (activeTracking) {
-            save.res <- try(save(list=".trackingSummary", file=file, envir=trackingEnv, compress=FALSE), silent=TRUE)
+            save.res <- saveObjSummary(trackingEnv, opt, getDataDir(dir))
         } else {
             ## Need to have newSummary in a variable named '.trackingSummary' to use save()
             assign(".trackingSummary", newSummary, envir=tmpenv)
-            save.res <- try(save(list=".trackingSummary", file=file, envir=tmpenv, compress=FALSE), silent=TRUE)
+            save.res <- saveObjSummary(trackingEnv, envir=tmpenv, opt=opt, dataDir=getDataDir(dir))
+            # save.res <- try(save(list=".trackingSummary", file=file, envir=tmpenv, compress=FALSE), silent=TRUE)
         }
         if (is(save.res, "try-error"))
             warning("unable to save .trackingSummary to ", dir, " (error was '", formatMsg(save.res), "')")

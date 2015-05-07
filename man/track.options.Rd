@@ -82,7 +82,8 @@ track.options(..., pos = 1, envir = as.environment(pos),
       one of them allows special action at the end of a top-level-task:
       \describe{
         \item{\code{"none"}:}{No special action at end of task, i.e., follow option \code{cache}}
-        \item{\code{"eotPurge"}:}{Purge objects from memory at the end }
+        \item{\code{"eotPurge"}:}{Purge objects from memory at the end
+	  of a top-level task}
         }
       Also affects when changes to objects are written to disk - see option
       \code{writeToDisk} below.}
@@ -165,7 +166,7 @@ track.options(..., pos = 1, envir = as.environment(pos),
 
   Global default values can be set in
   \code{options("global.track.options")} as a list like
-  \code{options(global.track.options=list(cache=TRUE, cachePolicy='tltPurge'))}.
+  \code{options(global.track.options=list(cache=TRUE, cachePolicy='eotPurge'))}.
 }
 \value{
   The value returned is a list of option values.  If options were
@@ -175,22 +176,30 @@ track.options(..., pos = 1, envir = as.environment(pos),
 }
 \section{Cache plugin functions}{
 
-\code{track} contains an experimental feature that allows
-users to supply their own plugin functions that specify
-cache rules.  Currently, the plugin function can specify
-whether or not an object will be flushed from memory at the
-end of a top-level command.
-See \link{track.plugins} for further info.
-}
+\code{track} allows users to supply their own plugin functions that
+specify cache rules.  The plugin function is called at the end of a
+top-level command.  The default plugin function implements a rule that
+flushes least-recently accessed large objects from the cache when more
+memory usage is over a threshold.  See \link{track.plugins} for further
+info.  }
 
 \author{Tony Plate <tplate@acm.org>}
 \seealso{ \link[=track-package]{Overview} and
   \link[=track.design]{design} of the \code{track} package. See
   \link{track.plugins} for description of cache plugin functions}
 \examples{
+##############################################################
+# Warning: running this example will cause variables currently
+# in the R global environment to be written to .RData files
+# in a tracking database on the filesystem under R's temporary
+# directory, and will cause the variables to be removed temporarily
+# from the R global environment.
+# It is recommended to run this example with a fresh R session
+# with no important variables in the global environment.
+##############################################################
+
 library(track)
-unlink("tmp1", recursive=TRUE)
-track.start("tmp1")
+track.start(dir=file.path(tempdir(), 'rdatadir6'))
 x <- 33
 X <- array(1:24, dim=2:4)
 track.status()
@@ -207,17 +216,17 @@ track.status()
 track.flush()
 track.status()
 track.stop(pos=1)
-track.start("tmp1")
+track.start(dir=file.path(tempdir(), 'rdatadir6'))
 # note that options previously changed are back at defaults (because default
 # to track.options() is save=FALSE
 track.options(c("cache", "writeToDisk"))
 track.options(cache=TRUE, writeToDisk=FALSE, save=TRUE) # change the options on disk
 track.options(c("cache", "writeToDisk"))
 track.stop(pos=1)
-track.start("tmp1")
+track.start(dir=file.path(tempdir(), 'rdatadir6'))
 # now options previously changed are remembered (because track.options(..., save=TRUE) was used)
 track.options(c("cache", "writeToDisk"))
-track.stop(pos=1)
+track.stop(pos=1, keepVars=TRUE)
 }
 % Add one or more standard keywords, see file 'KEYWORDS' in the
 % R documentation directory.

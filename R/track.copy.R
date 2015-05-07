@@ -25,6 +25,10 @@ track.copy <- function(from, to=1, list=NULL, pattern=NULL,
         stop("'from' and 'to' are the same")
     trackingEnv.to <- getTrackingEnv(env.to)
     trackingEnv.from <- getTrackingEnv(env.from)
+    if (verbose)
+        cat(if (delete) "Moving" else "Copying", " objects from ",
+            track.datadir(env.from), " to ",
+            track.datadir(env.to), "\n", sep="")
     opt.to <- track.options(trackingEnv=trackingEnv.to)
     opt.from <- track.options(trackingEnv=trackingEnv.from)
     if (opt.to$readonly)
@@ -142,15 +146,7 @@ track.copy <- function(from, to=1, list=NULL, pattern=NULL,
             # and remove the active binding if it exists
             if (exists(objName, envir=env.to, inherits=FALSE))
                 remove(list=objName, envir=env.to)
-            # create an active binding for the 'to' variable
-            f <- substitute(function(v) {
-                if (missing(v))
-                    getTrackedVar(x, envir)
-                else
-                    setTrackedVar(x, v, envir)
-            }, list(x=objName, envir=trackingEnv.to))
-            mode(f) <- "function"
-            environment(f) <- parent.env(environment(f))
+            f <- createBindingClosure(objName, trackingEnv.to)
             makeActiveBinding(objName, env=env.to, fun=f)
             if (!trackedInSource) {
                 # modify options we give here to immediately write out to disk
@@ -174,8 +170,7 @@ track.copy <- function(from, to=1, list=NULL, pattern=NULL,
                         envname(trackingEnv.to), ": ", assign.res)
             } else {
                 assign(".trackingSummaryChanged", TRUE, envir=trackingEnv.to)
-                file <- file.path(getDataDir(dir.to), paste(".trackingSummary", opt.to$RDataSuffix, sep="."))
-                save.res <- try(save(list=".trackingSummary", file=file, envir=trackingEnv.to, compress=FALSE), silent=TRUE)
+                save.res <- saveObjSummary(trackingEnv=trackingEnv.to, opt=opt.to, dataDir=getDataDir(dir.to))
                 if (is(save.res, "try-error"))
                     stop("unable to save .trackingSummary to ", dir.to)
                 else
@@ -196,8 +191,7 @@ track.copy <- function(from, to=1, list=NULL, pattern=NULL,
                             envname(trackingEnv.from), ": ", assign.res)
                 } else {
                     assign(".trackingSummaryChanged", TRUE, envir=trackingEnv.from)
-                    file <- file.path(getDataDir(dir.from), paste(".trackingSummary", opt.from$RDataSuffix, sep="."))
-                    save.res <- try(save(list=".trackingSummary", file=file, envir=trackingEnv.from, compress=FALSE), silent=TRUE)
+                    save.res <- saveObjSummary(trackingEnv=trackingEnv.from, opt=opt.from, dataDir=getDataDir(dir.from))
                     if (is(save.res, "try-error"))
                         stop("unable to save .trackingSummary to ", dir.from)
                     else

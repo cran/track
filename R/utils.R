@@ -190,7 +190,7 @@ isReservedName <- function(objName)
                                    ".trackingUnsaved", ".trackingSummary",
                                    ".trackingSummaryChanged", ".trackingOptions",
                                    ".trackingPid", ".trackingCreated", ".trackingCacheMark",
-                                   ".trackAuto", ".trackingFinished")))
+                                   ".trackAuto", ".trackingFinished", ".trackingModTime")))
 
 objIsTracked <- function(objNames, envir, trackingEnv, all.objs=ls(envir=envir, all.names=TRUE)) {
     if (length(objNames)==0)
@@ -268,13 +268,13 @@ writeFileMapFile <- function(fileMap, trackingEnv, dataDir, assignObj=TRUE) {
     ## open in binary mode so that we use just "\n" as a separator
     open.res <- (con <- file(file.path(dataDir, "filemap.txt"), open="wb"))
     if (is(open.res, "try-error")) {
-        warning("failed to open ", file.path(dataDir, "filemap.txt"), " for writing: try to fix problem, then do 'track.resave()'")
+        warning("failed to open ", file.path(dataDir, "filemap.txt"), " for writing: if this message appears repeatedly try to fix problem, then do 'track.resave()'")
         return(FALSE)
     }
     on.exit(close(con))
     save.res <- try(writeLines(text=fileData, con=con, sep="\n"), silent=TRUE)
     if (is(save.res, "try-error")) {
-        warning("failed to save filemap.txt: try to fix problem, then do 'track.resave()'")
+        warning("failed to save filemap.txt: if this message appears repeatedly try to fix problem, then do 'track.resave()'")
         return(FALSE)
     }
     return(TRUE)
@@ -301,14 +301,20 @@ readFileMapFile <- function(trackingEnv, dataDir, assignObj) {
     return(fileMap)
 }
 
-getObjSummary <- function(trackingEnv, opt, stop.if.not.found=TRUE) {
+getObjSummary <- function(trackingEnv, opt, stop.if.not.found=TRUE, fromWhere=paste('tracking env ', envname(trackingEnv))) {
     objSummary <- mget(".trackingSummary", envir=trackingEnv, ifnotfound=list(NULL))[[1]]
-    if (stop.if.not.found && is.null(objSummary))
-        stop("no .trackingSummary object in tracking env ", envname(trackingEnv), " - recommend using track.rebuild()")
-    if (stop.if.not.found && !is.data.frame(objSummary))
-        stop(".trackingSummary object found in tracking env ", envname(trackingEnv), " but is not a data frame - recommend using track.rebuild()")
+    problem <- NULL
     if (is.null(objSummary))
-        return(objSummary)
+        problem <- paste("no .trackingSummary object ", fromWhere,
+                         " - recommend using track.rebuild()", sep='')
+    else if (!is.data.frame(objSummary))
+        problem <- paste(".trackingSummary object found in ", fromWhere,
+                         " but is not a data frame - recommend using track.rebuild()", sep='')
+    if (!is.null(problem))
+        if (stop.if.not.found)
+            stop(problem)
+        else
+            return(structure(problem, class='try-error'))
     ## The 'cache' column was added in version 1.03.
     ## If we read a .trackingSummary without it, just add it.
     if (!is.element("cache", names(objSummary)))
@@ -346,8 +352,9 @@ envname <- function(envir) {
     # Use the name it has on the search() list, if possible.
     # This is simpler now that R has the environmentName() function
     n <- environmentName(envir)
-    if (n!="")
+    if (n!="") {
         return(paste("<env ", n, ">", sep=""))
+    }
     return(capture.output(print(envir))[1])
 }
 
@@ -426,6 +433,8 @@ setTrackedVar <- function(objName, value, trackingEnv, opt=track.options(trackin
         save.res <- try(save(list=objName, file=fullFile, envir=trackingEnv,
                              compress=opt$compress, compression_level=opt$compression_level), silent=TRUE)
         if (!is(save.res, "try-error")) {
+            if (opt$debug >= 2)
+                cat('setTrackedVar: removing', paste(objName, collapse=', '), 'from trackingEnv\n')
             if (!opt$cache && !is.element(objName, opt$alwaysCache))
                 remove(list=objName, envir=trackingEnv)
             unsaved <- getUnsavedObj(trackingEnv)
@@ -483,8 +492,7 @@ setTrackedVar <- function(objName, value, trackingEnv, opt=track.options(trackin
             } else {
                 assign(".trackingSummaryChanged", TRUE, envir=trackingEnv)
                 if (opt$writeToDisk && !is.element("eotPurge", opt$cachePolicy)) {
-                    file <- file.path(getDataDir(dir), paste(".trackingSummary", opt$RDataSuffix, sep="."))
-                    save.res <- try(save(list=".trackingSummary", file=file, envir=trackingEnv, compress=FALSE), silent=TRUE)
+                    save.res <- saveObjSummary(trackingEnv, opt=opt, dataDir=getDataDir(dir))
                     if (is(save.res, "try-error"))
                         warning("unable to save .trackingSummary to ", dir)
                     else
@@ -498,12 +506,15 @@ setTrackedVar <- function(objName, value, trackingEnv, opt=track.options(trackin
 }
 
 getTrackedVar <- function(objName, trackingEnv, opt=track.options(trackingEnv=trackingEnv)) {
-    ##  get the tracked var if it exists, or load it from disk if it doesn't
+    ## Get the tracked var if it exists, or load it from disk if it doesn't
+    ## Special case when getting variable '.Last' -- don't want to stop with
+    ## an error because that can cause an infinite loop, so if can't retrieve
+    ## that var, then print a warning and return NULL
     if (!is.character(objName) || length(objName)!=1)
         stop("objName must be a length one character vector")
     if (exists(objName, envir=trackingEnv, inherits=FALSE)) {
         if (opt$debug)
-            cat("getting tracked var '", objName, "' from cached obj in ", envname(trackingEnv), "\n", sep="")
+            cat("getTrackedVar: '", objName, "' from cached obj in ", envname(trackingEnv), "\n", sep="")
         value <- get(objName, envir=trackingEnv, inherits=FALSE)
         dir <- NULL
         fullFile <- NULL
@@ -513,16 +524,29 @@ getTrackedVar <- function(objName, trackingEnv, opt=track.options(trackingEnv=tr
         fileMap <- getFileMapObj(trackingEnv)
         file <- fileMap[match(objName, names(fileMap))]
         if (is.na(file))
-            stop("'", objName, "' does not exist in tracking env ", envname(trackingEnv),
-                 " (has no entry in .trackingFileMap)")
+            if (objName=='.Last') {
+                warning("'", objName, "' does not exist in tracking env ", envname(trackingEnv),
+                     " (has no entry in .trackingFileMap); returning NULL")
+                return(NULL)
+            } else {
+                stop("'", objName, "' does not exist in tracking env ", envname(trackingEnv),
+                     " (has no entry in .trackingFileMap)")
+            }
         dir <- getTrackingDir(trackingEnv)
         fullFile <- file.path(getDataDir(dir), paste(file, opt$RDataSuffix, sep="."))
-        if (!file.exists(fullFile))
-            stop("file '", fullFile, "' does not exist (for obj '", objName, "')")
+        if (!file.exists(fullFile)) {
+            if (objName=='.Last') {
+                warning("file '", fullFile, "' does not exist (for obj '", objName, "'); returning NULL")
+                return(NULL)
+            } else {
+                stop("file '", fullFile, "' does not exist (for obj '", objName, "')")
+            }
+        }
         tmpenv <- new.env(parent=emptyenv())
         ## hopefully, no actual copies are made while loading the object into tmpenv,
         ## then copying it to envir and returning it as the value of this function
         load.res <- load(fullFile, envir=tmpenv)
+        ## call the load callback
         if (length(load.res)<1 || load.res[1] != objName)
             stop("file '", fullFile, "' did not contain obj '", objName, "' as its first object")
         if (length(load.res)>1)
@@ -530,8 +554,26 @@ getTrackedVar <- function(objName, trackingEnv, opt=track.options(trackingEnv=tr
         value <- get(objName, envir=tmpenv, inherits=FALSE)
         if (opt$cache)
             assign(objName, value, envir=trackingEnv)
+        ## Call the load hooks based on class
+        if (is.element('ff', class(value))) {
+            fff <- attr(attr(value, 'physical'), 'filename')
+            ffd <- dirname(fff)
+            ffd2 <- dirname(ffd)
+            fff1 <- basename(fff)
+            fff2 <- basename(ffd)
+            ## If the ff filename looks like .../ff/<varfile>.ff, and
+            ## the file <trackingDir>/ff/<varfile>.ff exists, then
+            ## switch to using that file.
+            if (fff2 == 'ff' && fff1 == paste(file, '.ff', sep='')) {
+                fffr <- file.path(dir, 'ff', fff1)
+                if (file.exists(fffr) && fffr != fff) {
+                    attr(attr(value, 'physical'), 'orig.filename') <- fff
+                    attr(attr(value, 'physical'), 'filename') <- fffr
+                }
+            }
+        }
     }
-    ##  update the object table (object characteristics, accesses)
+    ## Update the object table (object characteristics, accesses)
     if (opt$maintainSummary && opt$recordAccesses) {
         objSummary <- getObjSummary(trackingEnv, opt=opt)
         if (!is.data.frame(objSummary)) {
@@ -571,8 +613,7 @@ getTrackedVar <- function(objName, trackingEnv, opt=track.options(trackingEnv=tr
                 if (opt$alwaysSaveSummary && !is.element("eotPurge", opt$cachePolicy)) {
                     if (is.null(dir))
                         dir <- getTrackingDir(trackingEnv)
-                    file <- file.path(getDataDir(dir), paste(".trackingSummary", opt$RDataSuffix, sep="."))
-                    save.res <- try(save(list=".trackingSummary", file=file, envir=trackingEnv, compress=FALSE), silent=TRUE)
+                    save.res <- saveObjSummary(trackingEnv, opt=opt, dataDir=getDataDir(dir))
                     if (is(save.res, "try-error"))
                         warning("unable to save .trackingSummary to ", dir, ": ", save.res)
                     else
@@ -584,29 +625,32 @@ getTrackedVar <- function(objName, trackingEnv, opt=track.options(trackingEnv=tr
     return(value)
 }
 
-if (FALSE) {
-create.fake.Sys.time <- function() {
-    ## The Sys.time() function created by this function doesn't get
-    ## called by functions in a different environment, so it doesn't
-    ## work properly with scriptests when running in the interpreter.
-    ## Create a fake Sys.time() function that just counts 1 second forward
-    ## from a fixed starting time each time it is called.
-    if (!is.element("fake.Sys.time", search())) {
-        f <- local({time.counter <- as.POSIXct("2001/01/01 09:00:00", tz="GMT")
-                     Sys.time <- function() {
-                         time.counter <<- time.counter + 1
-                         return(time.counter)
-                     }})
-        attach(environment(f), name="fake.Sys.time", warn.conflicts=FALSE)
+quietNormalizePath <- function(path, winslash='/', mustWork=FALSE) {
+    if (isTRUE(mustWork))
+        return(normalizePath(path, winslash='/', mustWork=mustWork))
+    newPath <- try(normalizePath(path, winslash='/', mustWork=mustWork), silent=TRUE)
+    if (inherits(newPath, 'try-error'))
+        newPath <- path
+    allComp <- strsplit(gsub('[/\\\\]', winslash, newPath), winslash)[[1]]
+    newComp <- allComp
+    j <- 2
+    for (i in seq(2, len=length(allComp)-1)) {
+        if (allComp[i]=='.') {
+            newComp <- newComp[-j]
+        } else if (allComp[i]=='..') {
+            newComp <- newComp[-c(j, j-1)]
+            j <- max(1, j-1)
+        } else {
+            j <- j+1
+        }
     }
-    invisible(NULL)
-}
+    paste0(allComp, collapse=winslash)
 }
 
 find.relative.path <- function(path, file) {
     ## Find a way to express file as a relative path to path
-    path <- normalizePath(path)
-    file <- normalizePath(file)
+    path <- quietNormalizePath(path, winslash='/')
+    file <- quietNormalizePath(file, winslash='/')
     if (.Platform$OS.type == "windows") {
         path <- gsub("\\", "/", path, fixed=TRUE)
         file <- gsub("\\", "/", file, fixed=TRUE)
@@ -660,20 +704,82 @@ dir.exists <- function(dir) {
     file.exists(dir) || (file.access(dir, mode=0)==0)
 }
 
-## Code in here was an alternate, worse way to override Sys.time() for testing purposes
-## (worse because it introduced permanent overhead for Sys.time(), even in normal operation)
+## Use these to override Sys.time() for testing purposes (to get Sys.time() to return
+## reproducible, steadily incrementing "times".  This  just counts 1 second forward
+## from a fixed starting time each time it is called.
+## Only use these for testing because they introduce overhead for Sys.time().
 
 fake.Sys.time <- function() {
-    if (!is.element("fake.Sys.time.control", search()))
-        set.fake.Sys.time(1)
-    fake.Sys.time.counter <- get("fake.Sys.time.counter", pos="fake.Sys.time.control")
-    assign("fake.Sys.time.counter", fake.Sys.time.counter + 1, pos="fake.Sys.time.control")
+    fake.Sys.time.counter <- get("fake.Sys.time.counter", envir=fake.Sys.time.env)
+    assign("fake.Sys.time.counter", fake.Sys.time.counter + 1, envir=fake.Sys.time.env)
     return(fake.Sys.time.counter)
 }
 
+fake.Sys.time.env <- as.environment(list(fake.Sys.time.counter=as.POSIXct("2001/01/01 09:00:00", tz="GMT")+1))
+
 set.fake.Sys.time <- function(offset=1) {
-    if (!is.element("fake.Sys.time.control", search()))
-        attach(what=new.env(), name="fake.Sys.time.control")
-    assign("fake.Sys.time.counter", as.POSIXct("2001/01/01 09:00:00", tz="GMT")+offset, pos="fake.Sys.time.control")
-    return(invisible(get("fake.Sys.time.counter", pos="fake.Sys.time.control")))
+    assign("fake.Sys.time.counter", as.POSIXct("2001/01/01 09:00:00", tz="GMT")+offset, envir=fake.Sys.time.env)
+    return(invisible(get("fake.Sys.time.counter", envir=fake.Sys.time.env)))
 }
+
+saveObjSummary <- function(trackingEnv,
+                           opt=track.options(trackingEnv=trackingEnv),
+                           dataDir=getDataDir(getTrackingDir(trackingEnv)),
+                           envir=trackingEnv) {
+    ## Save the object summary out to the file system
+    ## envir is the actual environment where the .trackingSummary object lives; it is
+    ## usually the same as trackingEnv
+    file <- file.path(dataDir, paste(".trackingSummary", opt$RDataSuffix, sep="."))
+    if (!exists(".trackingSummary", envir=envir, inherits=FALSE))
+        return(structure('saveObjSummary: .trackingSummary does not exist', class='try-error'))
+    objSummary <- get(".trackingSummary", envir=envir, inherits=FALSE)
+    ## pad just serves to make the saved tracking summary have different size on disk
+    ## which helps with noticing when a tracking summary has changed, because if
+    ## it changes within the same second, it will still have the same mod time.
+    ## However, most of the time, we're not concerned with second-level accuracy.
+    if (opt$debug) {
+        pad <- attr(objSummary, 'pad')
+        if (is.null(pad))
+            pad <- raw(1)
+        length(pad) <- (length(pad) + 17) %% 101
+        attr(objSummary, 'pad') <- pad
+        assign(".trackingSummary", objSummary, envir=envir)
+    }
+    save.res <- try(save(list=".trackingSummary", file=file, envir=envir, compress=FALSE), silent=TRUE)
+    if (is(save.res, 'try-error'))
+        attr(save.res, 'file') <- file
+    if (identical(envir, trackingEnv)) {
+        modTime <- file.info(file)
+        if (!is.na(modTime$mtime))
+            try(assign('.trackingModTime', modTime[,c('size','mtime')], envir=trackingEnv), silent=TRUE)
+    }
+    save.res
+}
+
+loadObjSummary <- function(trackingEnv,
+                           opt=track.options(trackingEnv=trackingEnv),
+                           dataDir=getDataDir(getTrackingDir(trackingEnv)),
+                           stop.on.not.exists=FALSE) {
+    # Load the object summary from the file system
+    file <- file.path(dataDir, paste(".trackingSummary", opt$RDataSuffix, sep="."))
+    tmpenv <- new.env(parent=emptyenv())
+    if (!file.exists(file))
+        if (stop.on.not.exists)
+            stop("file storing object summary doesn't exist: ", file)
+        else
+            return(NULL)
+    load.res <- try(load(file, envir=tmpenv), silent=TRUE)
+    if (is(load.res, "try-error"))
+        stop(file, " cannot be loaded -- for recovery see ?track.rebuild (",
+             as.character(load.res), ")")
+    if (length(load.res)!=1 || load.res != ".trackingSummary")
+        stop(file, " does not contain just '.trackingSummary' -- for recovery see ?track.rebuild")
+    modTime <- file.info(file)
+    if (!is.na(modTime$mtime))
+        try(assign('.trackingModTime', modTime[,c('size','mtime')], envir=trackingEnv), silent=TRUE)
+    ## .trackingSummary has to exist in tmpenv because we just loaded it
+    getObjSummary(tmpenv, opt=opt, fromWhere=file)
+}
+
+# used to store data around failures in an attempt to avoid infinite loops
+track.private.env <- as.environment(list(standard.Last=FALSE, last.failed.get=character(100), last.failed.time=rep(Sys.time(), 100), last.failed.i=1))

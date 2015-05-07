@@ -21,12 +21,18 @@ track.status(pos = 1, envir = as.environment(pos), expr,
         all.names = FALSE,
         what = c("all", "tracked", "trackable", "untracked",
                  "orphaned", "masked", "unsaved", "untrackable"))
-tracked(        pos=1, envir=as.environment(pos), list=NULL, pattern=NULL, glob=NULL, all.names = TRUE)
-untracked(      pos=1, envir=as.environment(pos), list=NULL, pattern=NULL, glob=NULL, all.names = TRUE)
-track.orphaned( pos=1, envir=as.environment(pos), list=NULL, pattern=NULL, glob=NULL, all.names = TRUE)
-track.masked(   pos=1, envir=as.environment(pos), list=NULL, pattern=NULL, glob=NULL, all.names = TRUE)
-untrackable(    pos=1, envir=as.environment(pos), list=NULL, pattern=NULL, glob=NULL, all.names = TRUE)
-track.unsaved(  pos=1, envir=as.environment(pos), list=NULL, pattern=NULL, glob=NULL, all.names = TRUE)
+tracked(        pos=1, envir=as.environment(pos), list=NULL,
+                pattern=NULL, glob=NULL, all.names = TRUE)
+untracked(      pos=1, envir=as.environment(pos), list=NULL,
+                pattern=NULL, glob=NULL, all.names = TRUE)
+track.orphaned( pos=1, envir=as.environment(pos), list=NULL,
+                pattern=NULL, glob=NULL, all.names = TRUE)
+track.masked(   pos=1, envir=as.environment(pos), list=NULL,
+                pattern=NULL, glob=NULL, all.names = TRUE)
+untrackable(    pos=1, envir=as.environment(pos), list=NULL,
+                pattern=NULL, glob=NULL, all.names = TRUE)
+track.unsaved(  pos=1, envir=as.environment(pos), list=NULL,
+                pattern=NULL, glob=NULL, all.names = TRUE)
 }
 
 \arguments{
@@ -102,17 +108,26 @@ track.unsaved(  pos=1, envir=as.environment(pos), list=NULL, pattern=NULL, glob=
 }
 \seealso{ \link[=track-package]{Overview} and \link[=track.design]{design} of the \code{track} package. }
 \examples{
+##############################################################
+# Warning: running this example will cause variables currently
+# in the R global environment to be written to .RData files
+# in a tracking database on the filesystem under R's temporary
+# directory, and will cause the variables to be removed temporarily
+# from the R global environment.
+# It is recommended to run this example with a fresh R session
+# with no important variables in the global environment.
+##############################################################
+
 library(track)
-unlink("tmp1", recursive=TRUE)
-remove(list=ls(all=TRUE))
-track.start("tmp1", cache=TRUE)
+track.start(dir=file.path(tempdir(), 'rdatadir10'))
 x1 <- 123
 x2 <- 456
 x3 <- 789
 track.status()
 rm(x3)
 track.status()
-track.stop(pos=1)
-unlink("tmp1", recursive=TRUE)
+# Would normally not call track.stop(), but do so here to clean up after
+# running this example.
+track.stop(pos=1, keepVars=1)
 }
 \keyword{ data }

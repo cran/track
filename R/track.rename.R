@@ -113,6 +113,7 @@ track.rename <- function(old, new, pos=1, envir=as.environment(pos), clobber=FAL
                 oldFile <- file.path(old.tempDir, paste(fileMap[fileMap.i], opt$RDataSuffix, sep="."))
             else
                 oldFile <- file.path(dir, paste(fileMap[fileMap.i], opt$RDataSuffix, sep="."))
+            oldFile.needsRemoving <- TRUE
         }
         if (old.isTracked[obj.i] & new.isTracked[obj.i]) {
             # situation (1)
@@ -120,43 +121,45 @@ track.rename <- function(old, new, pos=1, envir=as.environment(pos), clobber=FAL
             new.isSimpleName <- isSimpleName(newObjName)
             # If both old and new are not simple, can keep using the same underlying file,
             # otherwise need to rename
-            if (old.isSimpleName | new.isSimpleName) {
-                newFileName <- makeObjFileName(newObjName, fileMap)
-                newFile <- file.path(dir, paste(newFileName, opt$RDataSuffix, sep="."))
-                # Unfortuneately, can't just rename the file because the object name has changed,
-                # and the object is stored in the file.
-                # old code doesn't work: ok <- file.rename(oldFile, newFile)
-                res <- try(load(oldFile, envir=tmpEnv), silent=TRUE)
-                if (is(res, "try-error")) {
-                    warning("failed to rename obj '", oldObjName, "' to '", newObjName,
-                            "' because load('", oldFile, "') failed: ", res)
-                    next
-                }
-                if (length(res)!=1 || res!=oldObjName) {
-                    warning("failed to rename obj '", oldObjName, "' to '", newObjName,
-                            "' because old file '", oldFile, "' did not contain object named '", oldObjName, "'")
-                    next
-                }
-                if (newObjName != oldObjName) {
-                    # perverse sitation if newObjName==oldObjName, but try to handle all gracefully...
-                    res <- try(assign(newObjName, get(oldObjName, envir=tmpEnv, inherits=FALSE), envir=tmpEnv), silent=TRUE)
-                    if (is(res, "try-error")) {
-                        warning("failed to rename obj '", oldObjName, "' to '", newObjName,
-                                "' because could not make copy of object for saving")
-                        next
-                    }
-                    remove(list=oldObjName, envir=tmpEnv, inherits=FALSE)
-                }
-                res <- try(save(list=newObjName, file=newFile, envir=tmpEnv,
-                                compress=opt$compress, compression_level=opt$compression_level), silent=TRUE)
-                if (is(res, "try-error")) {
-                    warning("failed to rename obj '", oldObjName, "' to '", newObjName,
-                            "' because could not save renamed obj in file '", oldFile, "': ", res)
-                    next
-                }
-                remove(list=newObjName, envir=tmpEnv, inherits=FALSE)
-                fileMap[fileMap.i] <- newFileName
+            if (!old.isSimpleName && !new.isSimpleName)
+                oldFile.needsRemoving <- FALSE
+            newFileName <- makeObjFileName(newObjName, fileMap)
+            newFile <- file.path(dir, paste(newFileName, opt$RDataSuffix, sep="."))
+            # Unfortunately, can't just rename the file because the object name has changed,
+            # and the object is stored in the file.
+            # old code doesn't work: ok <- file.rename(oldFile, newFile)
+            res <- try(load(oldFile, envir=tmpEnv), silent=TRUE)
+            if (is(res, "try-error")) {
+                warning("failed to rename obj '", oldObjName, "' to '", newObjName,
+                        "' because load('", oldFile, "') failed: ", res)
+                next
             }
+            if (length(res)!=1 || res!=oldObjName) {
+                warning("failed to rename obj '", oldObjName, "' to '", newObjName,
+                        "' because old file '", oldFile, "' did not contain object named '", oldObjName, "'")
+                next
+            }
+            if (newObjName != oldObjName) {
+                # perverse sitation if newObjName==oldObjName, but try to handle all gracefully...
+                res <- try(assign(newObjName, get(oldObjName, envir=tmpEnv, inherits=FALSE), envir=tmpEnv), silent=TRUE)
+                if (is(res, "try-error")) {
+                    warning("failed to rename obj '", oldObjName, "' to '", newObjName,
+                            "' because could not make copy of object for saving")
+                    next
+                }
+                remove(list=oldObjName, envir=tmpEnv, inherits=FALSE)
+            } else {
+                oldFile.needsRemoving <- FALSE
+            }
+            res <- try(save(list=newObjName, file=newFile, envir=tmpEnv,
+                            compress=opt$compress, compression_level=opt$compression_level), silent=TRUE)
+            if (is(res, "try-error")) {
+                warning("failed to rename obj '", oldObjName, "' to '", newObjName,
+                        "' because could not save renamed obj in file '", oldFile, "': ", res)
+                next
+            }
+            remove(list=newObjName, envir=tmpEnv, inherits=FALSE)
+            fileMap[fileMap.i] <- newFileName
             if (!obj.updateAtEnd[obj.i]) {
                 names(fileMap)[fileMap.i] <- newObjName
                 fileMap.changed <- TRUE
@@ -171,15 +174,7 @@ track.rename <- function(old, new, pos=1, envir=as.environment(pos), clobber=FAL
             # and remove the active binding if it exists
             if (exists(newObjName, envir=envir, inherits=FALSE))
                 remove(list=newObjName, envir=envir)
-            # create an active binding for the new variable
-            f <- substitute(function(v) {
-                if (missing(v))
-                    getTrackedVar(x, envir)
-                else
-                    setTrackedVar(x, v, envir)
-            }, list(x=newObjName, envir=trackingEnv))
-            mode(f) <- "function"
-            environment(f) <- parent.env(environment(f))
+            f <- createBindingClosure(newObjName, trackingEnv)
             makeActiveBinding(newObjName, env=envir, fun=f)
         } else if (!new.isTracked[obj.i]) {
             # situations (2) & (3) (new obj is not tracked)
@@ -203,8 +198,7 @@ track.rename <- function(old, new, pos=1, envir=as.environment(pos), clobber=FAL
                         envname(trackingEnv), ": ", assign.res)
             } else {
                 assign(".trackingSummaryChanged", TRUE, envir=trackingEnv)
-                file <- file.path(getDataDir(dir), paste(".trackingSummary", opt$RDataSuffix, sep="."))
-                save.res <- try(save(list=".trackingSummary", file=file, envir=trackingEnv, compress=FALSE), silent=TRUE)
+                save.res <- saveObjSummary(trackingEnv, opt=opt, dataDir=getDataDir(dir))
                 if (is(save.res, "try-error"))
                     stop("unable to save .trackingSummary to ", dir)
                 else
@@ -216,7 +210,7 @@ track.rename <- function(old, new, pos=1, envir=as.environment(pos), clobber=FAL
         }
         if (!oldObjName %in% new)
             remove(list=oldObjName, envir=envir, inherits=FALSE)
-        if (old.isTracked[obj.i]) {
+        if (old.isTracked[obj.i] && oldFile.needsRemoving) {
             if (!file.remove(oldFile))
                 warning("unable to remove file '", oldFile, "'")
         }
@@ -233,8 +227,7 @@ track.rename <- function(old, new, pos=1, envir=as.environment(pos), clobber=FAL
                     envname(trackingEnv), ": ", assign.res)
         } else {
             assign(".trackingSummaryChanged", TRUE, envir=trackingEnv)
-            file <- file.path(getDataDir(dir), paste(".trackingSummary", opt$RDataSuffix, sep="."))
-            save.res <- try(save(list=".trackingSummary", file=file, envir=trackingEnv, compress=FALSE), silent=TRUE)
+            save.res <- saveObjSummary(trackingEnv, opt=opt, dataDir=getDataDir(dir))
             if (is(save.res, "try-error"))
                 stop("unable to save .trackingSummary to ", dir)
             else

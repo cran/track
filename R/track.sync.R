@@ -7,6 +7,7 @@ track.sync <- function(pos=1, master=c("auto", "envir", "files"), envir=as.envir
     ##   (3) check that all variables are activeBindings (to catch cases where
     ##       {rm(x); assign("x", value)} is performed, which leaves tracked
     ##       variables without an active binding.) This is only done as part "full"
+    ##   (4) flush excess objects from memory if too much memory is being used
     ##
     ## With master="files", sync the R environment to the tracking database in the filesystem,
     ## which is the job of track.rescan(), so call that.
@@ -32,6 +33,24 @@ track.sync <- function(pos=1, master=c("auto", "envir", "files"), envir=as.envir
     if (verbose)
         cat("track.sync", if (dryRun) "(dryRun)",
             ": syncing tracked env ", envname(envir), "\n", sep="")
+    if (!opt$stealable && !opt$readonly) {
+        ## The only db we don't want to check for external modifications is a non-stealable writable one
+        if (verbose)
+            cat('track.sync: proceeding with writeable db ', envname(envir), '\n', sep='')
+    } else {
+        if (verbose)
+            if (opt$stealable)
+                cat('track.sync: seeing if stealable db has changed ', envname(envir), '\n', sep='')
+            else
+                cat('track.sync: seeing if readonly db has changed ', envname(envir), '\n', sep='')
+        ## See if the tracking db has changed
+        modTime <- file.info(file.path(getTrackingDir(trackingEnv), paste('.trackingSummary', opt$RDataSuffix, sep='.')))
+        oldModTime <- mget(envir=trackingEnv, '.trackingModTime', ifnotfound=list(NULL))[[1]]
+        if (!is.null(oldModTime) && (modTime$mtime > oldModTime$mtime || modTime$size != oldModTime$size)) {
+            cat('track.sync: DB backing ', envname(envir), '[pos=', pos, '] has been modified; rescanning... ', sep='')
+            res <- track.rescan(envir=envir, forgetModified=TRUE, level='low', verbose=TRUE)
+        }
+    }
     master <- match.arg(master)
     if (master=="auto")
         if (opt$readonly)
@@ -53,7 +72,7 @@ track.sync <- function(pos=1, master=c("auto", "envir", "files"), envir=as.envir
     untracked <- setdiff(all.objs, names(fileMap))
     reserved <- isReservedName(untracked)
     ## .trackingEnv will always exist -- don't warn about it
-    warn.reserved <- setdiff(untracked[reserved], ".trackingEnv")
+    warn.reserved <- setdiff(untracked[reserved], c(".trackingEnv", ".trackingCreated"))
     if (verbose && length(warn.reserved))
         cat("track.sync: cannot track variables with reserved names: ", paste(warn.reserved, collapse=", "), "\n", sep="")
     untracked <- untracked[!reserved]
@@ -113,7 +132,7 @@ track.sync <- function(pos=1, master=c("auto", "envir", "files"), envir=as.envir
     }
     if (length(deleted)) {
         if (opt$readonly) {
-            warning(length(deleted), "variables deleted from a readonly tracking env, these will not be deleted from the files: ",
+            warning(length(deleted), " variables deleted from a readonly tracking env, these will not be deleted from the files: ",
                     paste(deleted, collapse=", "))
         } else if (dryRun) {
             cat("track.sync(dryRun): would remove ", length(deleted), " deleted variables: ", paste(deleted, collapse=", "), "\n", sep="")
@@ -200,26 +219,10 @@ track.sync <- function(pos=1, master=c("auto", "envir", "files"), envir=as.envir
             ## exists in 'envir'
             if (!opt$readonly)
                 setTrackedVar(objName, objval, trackingEnv, opt)
+            if (opt$debug >= 2)
+                cat('track.sync: removing', paste(objName, collapse=', '), 'from trackingEnv\n')
             remove(list=objName, envir=envir)
-            f <- substitute(function(v) {
-                if (missing(v))
-                    getTrackedVar(x, envir)
-                else
-                    setTrackedVar(x, v, envir)
-            }, list(x=objName, envir=trackingEnv))
-            mode(f) <- "function"
-            ## Need to replace the environment of f, otherwise it is this
-            ## function, which can contain a copy of objval, which can
-            ## use up lots of memory!
-            ## Need to be careful with the choice of env to set here:
-            ##   * emptyenv() doesn't work because then the binding can't find
-            ##     any defns
-            ##   * baseenv() doesn't work because then the function in the
-            ##     binding can't find functions from trackObjs
-            ##   * globalenv() doesn't work because the function in the
-            ##     binding can't find non-exported functions from trackObjs
-            ##   * parent.env(environment(f)) works!
-            environment(f) <- parent.env(environment(f))
+            f <- createBindingClosure(objName, trackingEnv)
             makeActiveBinding(objName, env=envir, fun=f)
         }
         ## Do we need to re-read the fileMap?
@@ -318,10 +321,10 @@ track.sync <- function(pos=1, master=c("auto", "envir", "files"), envir=as.envir
             cat("track.sync(dryRun): Would save", length(saveVars), "vars:",
                 paste(saveVars, collapse=", "), "\n")
         } else {
-            if (verbose)
-                cat("track.sync: flushing ", length(flushVars), " vars with call to track.flush(envir=",
-                    envname(envir), ", list=c(", paste("'", flushVars, "'", sep="", collapse=", "), "))\n", sep="")
             if (length(flushVars)) {
+                if (verbose)
+                    cat("track.sync: flushing ", length(flushVars), " vars with call to track.flush(envir=",
+                        envname(envir), ", list=c(", paste("'", flushVars, "'", sep="", collapse=", "), "))\n", sep="")
                 if (trace==2) {
                     cat("f")
                     flush.console()
@@ -329,6 +332,9 @@ track.sync <- function(pos=1, master=c("auto", "envir", "files"), envir=as.envir
                 track.flush(envir=envir, list=flushVars)
             }
             if (length(saveVars)) {
+                if (verbose)
+                    cat("track.sync: saving ", length(saveVars), " vars with call to track.save(envir=",
+                        envname(envir), ", list=c(", paste("'", saveVars, "'", sep="", collapse=", "), "))\n", sep="")
                 if (trace==2) {
                     cat("s")
                     flush.console()
@@ -336,7 +342,7 @@ track.sync <- function(pos=1, master=c("auto", "envir", "files"), envir=as.envir
                 track.save(envir=envir, list=saveVars)
             }
         }
-    } else {
+    } else if (!opt$readonly) {
         if (dryRun) {
             cat("track.sync(dryRun): Would save all vars\n")
         } else {
@@ -361,10 +367,9 @@ track.sync <- function(pos=1, master=c("auto", "envir", "files"), envir=as.envir
                 warning("no .trackingSummary in trackng env ", envname(trackingEnv))
             } else {
                 dir <- getTrackingDir(trackingEnv)
-                file <- file.path(getDataDir(dir), paste(".trackingSummary", opt$RDataSuffix, sep="."))
                 if (verbose)
                     cat("track.sync: saving .trackingSummary for envir=", envname(envir), " to ", dir, "\n", sep="")
-                save.res <- try(save(list=".trackingSummary", file=file, envir=trackingEnv, compress=FALSE), silent=TRUE)
+                save.res <- saveObjSummary(trackingEnv, opt=opt, dataDir=getDataDir(dir))
                 if (is(save.res, "try-error"))
                     warning("unable to save .trackingSummary to ", dir)
                 else

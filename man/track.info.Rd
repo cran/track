@@ -2,14 +2,17 @@
 \alias{track.filename}
 \alias{track.datadir}
 \alias{track.info}
+\alias{track.mem}
 \alias{env.is.tracked}
 \alias{tracked.envs}
 \title{Return filenames and directories for tracked variables.}
 \description{Return filenames and directories for tracked variables.}
 \usage{
-track.filename(expr, list = character(0), pos = 1, envir = as.environment(pos), suffix = FALSE)
+track.filename(expr, list = character(0), pos = 1,
+               envir = as.environment(pos), suffix = FALSE)
 track.datadir(pos = 1, envir = as.environment(pos), relative = TRUE)
-track.info(pos = 1, envir = as.environment(pos), all=TRUE)
+track.info(pos = NULL, envir = as.environment(pos), all=is.null(pos))
+track.mem(pos = NULL, envir = as.environment(pos), all=is.null(pos))
 env.is.tracked(pos = 1, envir = as.environment(pos))
 tracked.envs(envirs=search())
 }
@@ -35,7 +38,11 @@ tracked.envs(envirs=search())
       These names are guaranteed to be distinct for distinct variables.}
     \item{track.datadir()}{ returns the directory in which RData files
       for tracked variables are stored.}
-    \item{\code{track.info}:}{ returns a dataframe of information about
+    \item{\code{track.info}:}{ returns a dataframe of information
+      (directory, readonly/writable status) about
+      environments currently tracked.}
+    \item{\code{track.mem}:}{ returns a dataframe of information (number
+      of objects, memory usage) about
       environments currently tracked.}
     \item{env.is.tracked:}{returns \code{TRUE} or \code{FALSE}}
     \item{tracked.envs:}{with no arguments, it returns the names of
@@ -78,18 +85,31 @@ tracked.envs(envirs=search())
 \author{Tony Plate \email{tplate@acm.org}}
 \seealso{ \link[=track-package]{Overview} and \link[=track.design]{design} of the \code{track} package. }
 \examples{
+##############################################################
+# Warning: running this example will cause variables currently
+# in the R global environment to be written to .RData files
+# in a tracking database on the filesystem under R's temporary
+# directory, and will cause the variables to be removed temporarily
+# from the R global environment.
+# It is recommended to run this example with a fresh R session
+# with no important variables in the global environment.
+##############################################################
+
 library(track)
-unlink("tmp1", recursive=TRUE)
-track.start("tmp1")
+track.start(dir=file.path(tempdir(), 'rdatadir4'))
 x <- 33
 X <- array(1:24, dim=2:4)
 Y <- list(a=1:3,b=2)
 X[2] <- -1
 track.datadir(relative=TRUE)
+track.datadir(relative=FALSE)
 track.filename(list=c("x", "X"))
+track.info()
+track.mem()
 env.is.tracked(pos=1)
 env.is.tracked(pos=2)
-track.stop(pos=1)
-unlink("tmp1", recursive=TRUE)
+# Would normally not call track.stop(), but do so here to clean up after
+# running this example.
+track.stop(pos=1, keepVars=TRUE)
 }
 \keyword{ data }

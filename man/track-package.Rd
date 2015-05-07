@@ -1,5 +1,10 @@
-\name{track-package}
+\name{track-intro}
+\alias{track-intro}
 \alias{track-package}
+\alias{track-overview}
+\alias{track.intro}
+\alias{track.package}
+\alias{track.overview}
 \docType{package}
 \title{
 Overview of track package
@@ -34,33 +39,6 @@ called each time a top-level-task completes does three major things:
   \item writes changed variables to the database, and
   \item deletes cached objects from memory.
   }
-
-Tracking is not particularly suitable for storing objects that contain
-environments, because those environments and their contents will be
-fully written out in the saved file (in a live R session, environments
-are references, and there can be multiple references to one
-environment.)  Functions are one of the most common objects that contain
-environments, which can contain data objects local to the function
-(e.g., see the examples in the R FAQ in the section "Lexical scoping"
-under "What are the differences between R and S?"
-\url{http://cran.r-project.org/doc/FAQ/R-FAQ.html#Lexical-scoping}).
-Additionally, the results of some modeling functions contain
-environments, e.g., \code{lm} holds several references to the
-environment that contains the data.  When an \code{lm} object is
-\code{save}'ed, the environment containing the data, and all the other
-objects in that environment, can be saved in the same file.  To work
-with large data objects and modeling functions, consider first creating
-a tracking database that contains the data objects.  Then, in a
-different R session (which can be running at the same time), use
-\code{track.attach} to attach the db of data objects at \code{pos=2} on
-the search list.  When working in this way, the data objects will only
-be kept in memory when being used, and modeling functions that record
-environments in their results can be successful used (though beware of
-modeling functions that store large amounts of data in their results.)
-Alternatively, use modeling functions that do not store references to
-environments.  The utility function \code{\link{show.envs}} from the
-\code{track} package will show what environments are referenced
-within an object (though it is not guaranteed to find them all.)
 
 The track package also provides a self-contained incremental history
 saving function that writes the most recent command to the file
@@ -103,6 +81,9 @@ Here is a brief example of tracking some variables in the global environment:
 
 \preformatted{
 > library(track)
+> # By default, track.start() uses/creates a db in the dir
+> # 'rdatadir' in the current working directory; supply arg
+> # dir= to change.
 > track.start()
 > x <- 123                  # Variable 'x' is now tracked
 > y <- matrix(1:6, ncol=2)  # 'y' is assigned & tracked
@@ -268,6 +249,9 @@ Functions for getting status of tracking and summaries of variables:
   they are saved to disk or not, etc.
   \item \code{\link{track.info}()}: return a data frame
   containing information about which tracking dbs are currently active.
+  \item \code{\link{track.mem}()}: return a data frame
+  containing information about number of objects and memory usage in
+  tracking dbs.
   \item \code{\link{env.is.tracked}()}: tell whether an
   environment is currently tracked
 }
@@ -296,32 +280,56 @@ Functions for managing tracking and tracked variables:
 \itemize{
   \item \code{\link{track.options}()}: examine and set
   options to control tracking
-  \item \code{\link{track.remove}()}: completely remove all
-  traces of a tracked variable
-  \item \code{\link{track.save}()}: write unsaved variables to disk
-  \item \code{\link{track.flush}()}: write unsaved variables to disk, and remove from memory
-  \item \code{\link{track.forget}()}: delete cached
-  versions without saving to file (file version will be retrieved next
-  time the variable is accessed)
-  \item \code{\link{track.rescan}()}: reload variable
-  values from disk (can forget all cached vars, remove no-longer existing tracked vars)
   \item \code{\link{track.load}()}: load variables from a
   saved RData file into the tracking session
   \item \code{\link{track.copy}()} and \code{\link{track.move}()}: copy
   or move variables from one tracking db to another
   \item \code{\link{track.rename}()} rename variables in a tracking db
+  \item \code{\link{track.rescan}()}: reload variable
+  values from disk (can forget all cached vars, remove no-longer existing tracked vars)
+  \item \code{\link{track.auto}()}: turn auto-tracking on or off
 }
 
-Functions for recovering from errors:
+Functions used internally as part of auto-tracking
+(generally not called by the user when auto-tracking is running):
+\itemize{
+  \item \code{\link{track.sync}()}: write unsaved variables to disk, and
+  remove excess objects from memory.  This function can be called by the
+  user if they wish to remove excess objects from memory during a
+  memory-intensive top-level command.
+  \item \code{track.sync.callback()}: calls \code{\link{track.sync}()},
+  this function is installed as a
+  task callback (to be called each time a top-level task is completed,
+  see \code{\link[base:taskCallback]{taskCallback}}).  This function is
+  not exported by the track package.
+  \item \code{track.auto.monitor()}: an additional callback that
+  monitors the existence of the callback to \code{track.sync.callback}
+  and re-instates it if missing.  This function is
+  not exported by the track package.
+}
+
+Lower-level functions for managing tracking and tracked variables (
+generally not called by the user when auto-tracking is running):
+\itemize{
+  \item \code{\link{track.remove}()}: completely remove all
+  traces of a tracked variable
+  \item \code{\link{track.save}()}: write unsaved variables to disk
+  \item \code{\link{track.flush}()}: write unsaved variables to disk, and remove from memory
+  \item \code{\link{track.forget}()}: delete cached
+  versions without saving to file (the object saved in the file
+  will be retrieved next time the variable is accessed)
+}
+
+Functions for recovering from errors (caused by bugs or by multiple
+sessions updating bookkeeping data):
 \itemize{
   \item \code{\link{track.rebuild}()}: rebuild tracking
   information from objects in memory or on disk
-  \item \code{\link{track.flush}}: write unsaved variables to disk, and remove from memory
 }
 
 Design and internals of tracking:
 \itemize{
-  \item \code{\link{track.design}}
+  \item See help page \code{\link{track.design}}
 }
 }
 \note{
@@ -338,6 +346,35 @@ Design and internals of tracking:
 track.options(autoTrackExcludePattern="regexp")
 track.options(autoTrackExcludeClass="classname")
 }
+
+Tracking is not particularly suitable for storing objects that contain
+environments, because those environments and their contents will be
+fully written out in the saved file (in a live R session, environments
+are references, and there can be multiple references to one
+environment.)  Functions are one of the most common objects that contain
+environments, which can contain data objects local to the function
+(e.g., see the examples in the R FAQ in the section "Lexical scoping"
+under "What are the differences between R and S?"
+\url{http://cran.r-project.org/doc/FAQ/R-FAQ.html#Lexical-scoping}).
+Additionally, the results of some modeling functions contain
+environments, e.g., \code{lm} holds several references to the
+environment that contains the data.  When an \code{lm} object is
+\code{save}'ed, the environment containing the data, and all the other
+objects in that environment, can be saved in the same file.  To work
+with large data objects and modeling functions, consider first creating
+a tracking database that contains the data objects.  Then, in a
+different R session (which can be running at the same time), use
+\code{track.attach} to attach the db of data objects at \code{pos=2} on
+the search list.  When working in this way, the data objects will only
+be kept in memory when being used, and modeling functions that record
+environments in their results can be successful used (though beware of
+modeling functions that store large amounts of data in their results.)
+Alternatively, use modeling functions that do not store references to
+environments.  The utility function \code{\link{show.envs}} from the
+\code{track} package will show what environments are referenced
+within an object (though it is not guaranteed to find them all.)
+
+
   }
 
 
@@ -345,8 +382,7 @@ track.options(autoTrackExcludeClass="classname")
 \references{
 Roger D. Peng. Interacting with data using the filehash package. R
 News, 6(4):19-24, October
-2006. \url{http://cran.r-project.org/doc/Rnews} and
-\url{http://sandybox.typepad.com/software}
+2006. \url{http://cran.r-project.org/doc/Rnews}
 
 David E. Brahm. Delayed data packages. R News, 2(3):11-12, December
 2002.  \url{http://cran.r-project.org/doc/Rnews}
@@ -373,11 +409,23 @@ time R returns to the prompt after completing a command):
 
 }
 \examples{
-\dontrun{
+##############################################################
+# Warning: running this example will cause variables currently
+# in the R global environment to be written to .RData files
+# in a tracking database on the filesystem under R's temporary
+# directory, and will cause the variables to be removed from
+# the R global environment.
+# It is recommended to run this example with a fresh R session
+# with no important variables in the global environment.
+##############################################################
+
 library(track)
-# start tracking the global environment using directory 'rdatadir'
-# inside dontrun to avoid creating/removing rdatadir
-track.start()
+# Start tracking the global environment using a tmp directory
+# Default tracking db dir is 'rdatadir' in the current working
+# directory; omit the dir= argument to use this.
+if (!is.element('tmpenv', search())) attach(new.env(), name='tmpenv', pos=2)
+assign('tmpdatadir', pos='tmpenv', value=file.path(tempdir(), 'rdatadir1'))
+track.start(dir=tmpdatadir)
 a <- 1
 b <- 2
 ls()
@@ -385,13 +433,16 @@ track.status()
 track.summary()
 track.info()
 track.stop()
-# variables are now gone
+# Variables are now gone because default action of track.stop()
+# is to not read all tracked variables into memory (this could
+# exhaust memory and/or be very time consuming).
 ls()
 # bring them back
-track.start()
+track.start(dir=tmpdatadir)
 ls()
-track.stop()
-}
+# It is possible to keep tracked vars after stopping tracking:
+track.stop(keepVars=TRUE)
+ls()
 }
 \keyword{ package }
 \keyword{ data }
